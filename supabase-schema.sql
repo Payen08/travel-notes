@@ -79,6 +79,11 @@ set search_path = public
 as $$
   select exists (
     select 1
+    from public.trips t
+    where t.id = target_trip_id
+      and t.owner_id = auth.uid()
+  ) or exists (
+    select 1
     from public.trip_members tm
     where tm.trip_id = target_trip_id
       and tm.user_id = auth.uid()
@@ -166,6 +171,12 @@ drop policy if exists "trip_members_delete_self_member" on public.trip_members;
 create policy "trip_members_delete_self_member"
 on public.trip_members for delete
 using (user_id = auth.uid() and role = 'member');
+
+drop policy if exists "trip_members_update_self" on public.trip_members;
+create policy "trip_members_update_self"
+on public.trip_members for update
+using (user_id = auth.uid())
+with check (user_id = auth.uid());
 
 drop policy if exists "bills_select_members" on public.bills;
 create policy "bills_select_members"

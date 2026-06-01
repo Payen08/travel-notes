@@ -1,4 +1,4 @@
-const CACHE_NAME = 'travel-accounting-pwa-v3';
+const CACHE_NAME = 'travel-accounting-pwa-v4';
 const APP_SHELL = [
   './',
   './index.html',

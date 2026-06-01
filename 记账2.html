@@ -397,6 +397,7 @@
                         <button type="button" id="btn-cloud-login" class="bg-primary text-white font-bold py-3 rounded-xl text-sm">登录</button>
                         <button type="button" id="btn-cloud-register" class="bg-gray-100 text-gray-600 font-bold py-3 rounded-xl text-sm">注册</button>
                     </div>
+                    <button type="button" id="btn-cloud-reset-password" class="w-full text-[11px] font-bold text-gray-400 hover:text-primary py-1">忘记密码？点此重置</button>
                     <p class="text-[11px] font-bold text-gray-400 leading-relaxed px-1">收不到确认邮件时，在 Supabase 关闭 Confirm email 后再注册，就能直接登录。</p>
                 </div>
                 <div id="cloud-sync-panel" class="hidden space-y-3">
@@ -660,8 +661,43 @@
             el.className = classes[variant] || classes.off;
         }
 
+        function cleanDisplayName(value) {
+            return String(value || '').trim();
+        }
+
+        function nameFromEmail(email) {
+            const localPart = String(email || '').split('@')[0].trim();
+            return localPart || '我';
+        }
+
         function cloudDisplayName() {
-            return localStorage.getItem('travel2CloudDisplayName') || members[0] || '我';
+            const metadata = cloudSession && cloudSession.user && cloudSession.user.user_metadata ? cloudSession.user.user_metadata : {};
+            return cleanDisplayName(metadata.display_name)
+                || cleanDisplayName(metadata.name)
+                || cleanDisplayName(localStorage.getItem('travel2CloudDisplayName'))
+                || nameFromEmail(cloudSession && cloudSession.user ? cloudSession.user.email : '')
+                || '我';
+        }
+
+        function ensureAccountInMembers({ persist = false } = {}) {
+            if (!cloudSession) return false;
+            const accountName = cloudDisplayName();
+            if (!accountName) return false;
+            const nextMembers = normalizeMembers([accountName, ...members]);
+            const changed = nextMembers.length !== members.length || nextMembers.some((m, index) => m !== members[index]);
+            if (changed) {
+                members = nextMembers;
+                if (persist) saveData();
+            }
+            return changed;
+        }
+
+        function defaultPayerName() {
+            if (cloudSession) {
+                ensureAccountInMembers();
+                return cloudDisplayName();
+            }
+            return members[0] || '我';
         }
 
         function renderCloudState() {
@@ -672,7 +708,7 @@
             const inviteEl = document.getElementById('cloud-invite-code');
             if (!loginPanel || !syncPanel) return;
 
-            if (nameInput && !nameInput.value) nameInput.value = cloudDisplayName();
+            if (nameInput && cloudSession) nameInput.value = cloudDisplayName();
 
             if (!hasCloudSettings()) {
                 loginPanel.classList.remove('hidden');
@@ -701,7 +737,7 @@
             loginPanel.classList.add('hidden');
             syncPanel.classList.remove('hidden');
             setCloudAuthStatus(cloudTripId ? '已同步' : '已登录', 'on');
-            if (userText) userText.textContent = cloudSession.user.email || cloudSession.user.id;
+            if (userText) userText.textContent = `${cloudDisplayName()} · ${cloudSession.user.email || cloudSession.user.id}`;
             if (inviteEl) inviteEl.textContent = localStorage.getItem('travel2InviteCode') || '-';
             setCloudMessage(cloudTripId ? '云端旅程已连接，新增和删除账单会自动同步。' : '还没有云端旅程，可以创建/上传或输入邀请码加入。', 'muted');
         }
@@ -732,10 +768,12 @@
             cloudClient = window.supabase.createClient(cloudSettings.url, cloudSettings.anonKey);
             const { data } = await cloudClient.auth.getSession();
             cloudSession = data && data.session ? data.session : null;
+            if (cloudSession) ensureAccountInMembers({ persist: true });
             renderCloudState();
 
             cloudClient.auth.onAuthStateChange(async (_event, session) => {
                 cloudSession = session;
+                if (cloudSession) ensureAccountInMembers({ persist: true });
                 renderCloudState();
                 if (cloudSession && cloudTripId) {
                     subscribeCloudTrip();
@@ -750,6 +788,7 @@
         }
 
         function tripPayload() {
+            ensureAccountInMembers();
             return {
                 name: tripData.name,
                 budget: Number(tripData.budget || 0),
@@ -812,7 +851,7 @@
         function cloudAuthFields() {
             const email = document.getElementById('cloud-email-input').value.trim();
             const password = document.getElementById('cloud-password-input').value;
-            const displayName = document.getElementById('cloud-name-input').value.trim() || '我';
+            const displayName = document.getElementById('cloud-name-input').value.trim() || nameFromEmail(email);
             return { email, password, displayName };
         }
 
@@ -849,8 +888,22 @@
             setCloudAuthButtonsLoading(false);
             if (error) return showAlert('登录失败', cloudAuthErrorMessage(error.message), 'error');
             cloudSession = data.session || null;
+            localStorage.setItem('travel2CloudDisplayName', cloudDisplayName());
+            ensureAccountInMembers({ persist: true });
             renderCloudState();
             if (cloudTripId) await pullCloudTrip({ silent: true });
+            else setupAddForm();
+        }
+
+        async function resetCloudPassword() {
+            if (!cloudClient) return showAlert('云同步不可用', '请检查 SUPABASE_CONFIG 是否已填写。', 'error');
+            const email = document.getElementById('cloud-email-input').value.trim();
+            if (!email) return showAlert('缺少邮箱', '请先在邮箱栏输入你的账号邮箱，再点重置。', 'error');
+
+            const redirectTo = cloudRedirectUrl() || location.href;
+            const { error } = await cloudClient.auth.resetPasswordForEmail(email, { redirectTo });
+            if (error) return showAlert('重置失败', cloudAuthErrorMessage(error.message), 'error');
+            showAlert('已发送重置邮件', `一封密码重置邮件已发送到 ${email}，请查收邮件并点击链接设置新密码。`, 'info');
         }
 
         async function registerCloudAccount() {
@@ -872,8 +925,13 @@
             if (error) return showAlert('注册失败', cloudAuthErrorMessage(error.message), 'error');
 
             cloudSession = data.session || null;
+            if (cloudSession) {
+                localStorage.setItem('travel2CloudDisplayName', cloudDisplayName());
+                ensureAccountInMembers({ persist: true });
+            }
             renderCloudState();
             if (cloudSession) {
+                setupAddForm();
                 showAlert('注册成功', '账号已创建并登录。', 'info');
             } else {
                 showAlert('需要确认邮箱', 'Supabase 现在要求确认邮箱。如果邮件不到，请到 Supabase 关闭 Confirm email，然后再用这个邮箱登录或重新注册。', 'info');
@@ -885,6 +943,7 @@
             await cloudClient.auth.signOut();
             cloudSession = null;
             renderCloudState();
+            setupAddForm();
         }
 
         async function upsertCloudMembership(role = 'owner') {
@@ -912,6 +971,7 @@
                 return false;
             }
             if (!cloudTripId && silent) return false;
+            ensureAccountInMembers({ persist: true });
 
             let createdNewTrip = false;
             if (!cloudTripId) {
@@ -983,6 +1043,11 @@
                 return false;
             }
 
+            const { data: cloudMemberRows } = await cloudClient
+                .from('trip_members')
+                .select('display_name')
+                .eq('trip_id', cloudTripId);
+
             tripData = {
                 ...tripData,
                 name: trip.name || tripData.name,
@@ -992,9 +1057,17 @@
                 rate: Number(trip.rate || tripData.rate || 1),
                 categoryBudgets: trip.category_budgets || {}
             };
-            members = normalizeMembers(Array.isArray(trip.members) && trip.members.length ? trip.members : members);
+            const tripMembers = Array.isArray(trip.members) ? trip.members : [];
+            const cloudMemberNames = (cloudMemberRows || []).map(row => row.display_name);
+            const billMemberNames = (cloudBills || []).flatMap(row => [
+                row.payer,
+                row.receiver,
+                ...(Array.isArray(row.participants) ? row.participants : [])
+            ]);
+            members = normalizeMembers([cloudDisplayName(), ...tripMembers, ...cloudMemberNames, ...billMemberNames, ...members]);
             bills = (cloudBills || []).map(cloudToBill);
             normalizeBills();
+            ensureAccountInMembers();
             if (trip.invite_code) localStorage.setItem('travel2InviteCode', trip.invite_code);
             saveData();
             initHeader();
@@ -1020,6 +1093,7 @@
             cloudTripId = data;
             localStorage.setItem('travel2CloudTripId', cloudTripId);
             await pullCloudTrip({ silent: true });
+            await createOrUpdateCloudTrip({ silent: true });
             subscribeCloudTrip();
             showAlert('已加入', '已加入队友的云端旅程。', 'info');
         }
@@ -1398,10 +1472,12 @@
         }
 
         function setupAddForm(record = null) {
+            if (cloudSession) ensureAccountInMembers();
             const form = document.getElementById('add-form');
             const submitBtn = form.querySelector('button[type="submit"]');
             const type = record ? record.type : 'expense';
             const selectedCurrency = record ? (record.currency || tripData.foreignCurrency) : tripData.foreignCurrency;
+            const payerName = record ? (record.payer || defaultPayerName()) : defaultPayerName();
 
             form.reset();
             editingBillId = record ? record.id : null;
@@ -1436,8 +1512,8 @@
             if (record) {
                 document.getElementById('input-amount').value = Number(record.amount || 0);
                 document.getElementById('input-desc').value = record.type === 'itinerary' ? (record.note || '') : (record.desc || '');
-                document.getElementById('modal-payer').value = record.payer || members[0] || '';
-                document.getElementById('transfer-from').value = record.payer || members[0] || '';
+                document.getElementById('modal-payer').value = payerName;
+                document.getElementById('transfer-from').value = payerName;
                 document.getElementById('transfer-to').value = record.receiver || members[1] || members[0] || '';
 
                 if (record.type === 'itinerary') {
@@ -1448,6 +1524,11 @@
                     document.getElementById('itinerary-start').value = toDateTimeInput(record.itineraryStart || record.timestamp);
                     document.getElementById('itinerary-end').value = toDateTimeInput(record.itineraryEnd || record.itineraryStart || record.timestamp);
                 }
+            } else {
+                document.getElementById('modal-payer').value = payerName;
+                document.getElementById('transfer-from').value = payerName;
+                const receiver = members.find(m => m !== payerName) || payerName;
+                document.getElementById('transfer-to').value = receiver;
             }
 
             // Default checkboxes
@@ -1465,7 +1546,7 @@
         }
 
         function updateSplitSummaryText() {
-            const payer = document.getElementById('modal-payer').value || members[0];
+            const payer = document.getElementById('modal-payer').value || defaultPayerName();
             const count = document.querySelectorAll('input[name="split-participants"]:checked').length;
             document.getElementById('split-summary-text').innerHTML = `<span class="text-primary">${escapeHTML(payer)}</span> 付款，<span class="text-primary">${count}</span> 人平摊`;
         }
@@ -1792,6 +1873,7 @@
         });
         document.getElementById('btn-cloud-login').addEventListener('click', loginCloudAccount);
         document.getElementById('btn-cloud-register').addEventListener('click', registerCloudAccount);
+        document.getElementById('btn-cloud-reset-password').addEventListener('click', resetCloudPassword);
         document.getElementById('btn-cloud-logout').addEventListener('click', logoutCloud);
         document.getElementById('btn-cloud-create').addEventListener('click', () => createOrUpdateCloudTrip());
         document.getElementById('btn-cloud-pull').addEventListener('click', () => pullCloudTrip());
