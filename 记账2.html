@@ -233,14 +233,33 @@
                 <!-- Itinerary Specific: Details -->
                 <div id="section-itinerary" class="hidden mb-6 bg-white p-5 rounded-[24px] shadow-sm">
                     <div class="flex gap-2 mb-4">
-                        <label class="flex items-center gap-2 text-sm font-bold"><input type="radio" name="itinerary-type" value="flight" checked> ✈️ 航班</label>
-                        <label class="flex items-center gap-2 text-sm font-bold ml-4"><input type="radio" name="itinerary-type" value="hotel"> 🏨 酒店</label>
+                        <label class="flex items-center gap-2 text-sm font-bold"><input type="radio" name="itinerary-type" value="flight" checked> <i class="fas fa-plane"></i> 航班</label>
+                        <label class="flex items-center gap-2 text-sm font-bold ml-4"><input type="radio" name="itinerary-type" value="hotel"> <i class="fas fa-bed"></i> 酒店</label>
                     </div>
-                    <input type="text" id="itinerary-title" placeholder="航班号 / 酒店名" class="w-full bg-gray-50 border-none rounded-xl py-3 px-4 text-sm font-bold mb-3 focus:outline-none">
-                    <div class="flex gap-2 mb-3">
-                        <input type="datetime-local" id="itinerary-start" class="w-full bg-gray-50 border-none rounded-xl py-3 px-2 text-xs font-bold focus:outline-none text-gray-500">
-                        <span class="flex items-center text-gray-400 text-xs">至</span>
-                        <input type="datetime-local" id="itinerary-end" class="w-full bg-gray-50 border-none rounded-xl py-3 px-2 text-xs font-bold focus:outline-none text-gray-500">
+                    <!-- Round-trip toggle (flight only) -->
+                    <div id="flight-roundtrip-toggle" class="flex gap-2 mb-3">
+                        <label class="flex items-center gap-2 text-xs font-bold"><input type="radio" name="flight-trip-type" value="oneway" checked> 单程</label>
+                        <label class="flex items-center gap-2 text-xs font-bold ml-3"><input type="radio" name="flight-trip-type" value="roundtrip"> 往返</label>
+                    </div>
+                    <!-- Main itinerary fields -->
+                    <div id="flight-outbound" class="border border-gray-100 rounded-xl p-3 mb-2">
+                        <div id="itinerary-section-label" class="text-[10px] font-extrabold text-primary uppercase tracking-wide mb-2">航班信息</div>
+                        <input type="text" id="itinerary-title" placeholder="航班号 (如 CA123)" class="w-full bg-gray-50 border-none rounded-xl py-3 px-4 text-sm font-bold mb-2 focus:outline-none">
+                        <div class="flex gap-1">
+                            <input type="datetime-local" id="itinerary-start" class="min-w-0 flex-1 bg-gray-50 border-none rounded-xl py-3 px-1.5 text-[11px] font-bold focus:outline-none text-gray-500">
+                            <span class="flex items-center text-gray-400 text-[11px] shrink-0">至</span>
+                            <input type="datetime-local" id="itinerary-end" class="min-w-0 flex-1 bg-gray-50 border-none rounded-xl py-3 px-1.5 text-[11px] font-bold focus:outline-none text-gray-500">
+                        </div>
+                    </div>
+                    <!-- Return (hidden for oneway) -->
+                    <div id="flight-return" class="hidden border border-gray-100 rounded-xl p-3">
+                        <div class="text-[10px] font-extrabold text-orange-500 uppercase tracking-wide mb-2">返程</div>
+                        <input type="text" id="itinerary-return-title" placeholder="返程航班号 (如 CA124)" class="w-full bg-gray-50 border-none rounded-xl py-3 px-4 text-sm font-bold mb-2 focus:outline-none">
+                        <div class="flex gap-1">
+                            <input type="datetime-local" id="itinerary-return-start" class="min-w-0 flex-1 bg-gray-50 border-none rounded-xl py-3 px-1.5 text-[11px] font-bold focus:outline-none text-gray-500">
+                            <span class="flex items-center text-gray-400 text-[11px] shrink-0">至</span>
+                            <input type="datetime-local" id="itinerary-return-end" class="min-w-0 flex-1 bg-gray-50 border-none rounded-xl py-3 px-1.5 text-[11px] font-bold focus:outline-none text-gray-500">
+                        </div>
                     </div>
                 </div>
 
@@ -1262,14 +1281,38 @@
 
         function flightMetaLine(item) {
             const meta = item.meta || {};
-            const route = [meta.from, meta.to].filter(Boolean).map(escapeHTML).join(' -> ');
-            const bits = [
-                meta.flightNo ? escapeHTML(meta.flightNo) : '',
-                meta.airline ? escapeHTML(meta.airline) : '',
-                route,
-                meta.status ? `状态 ${escapeHTML(meta.status)}` : ''
-            ].filter(Boolean);
-            return bits.length ? `<div class="text-[10px] font-bold text-gray-400 mt-2"><i class="fas fa-plane-departure mr-1"></i>${bits.join(' · ')}</div>` : '';
+            const route = [meta.from, meta.to].filter(Boolean).map(escapeHTML).join(' → ');
+            const bits = [];
+            if (meta.flightNo) bits.push(escapeHTML(meta.flightNo));
+            if (meta.airline) bits.push(escapeHTML(meta.airline));
+            if (route) bits.push(route);
+
+            // Status + delays
+            const statusParts = [];
+            if (meta.status) statusParts.push(escapeHTML(meta.status));
+            if (meta.depDelay != null) statusParts.push(`延误 ${Math.round(meta.depDelay)}分`);
+            if (statusParts.length) bits.push(statusParts.join(' · '));
+
+            // Terminal / Gate info
+            const gateInfo = [
+                meta.depTerminal ? `${meta.depTerminal}航站楼` : '',
+                meta.depGate ? `${meta.depGate}口` : ''
+            ].filter(Boolean).join(' ');
+            if (gateInfo) bits.push(gateInfo);
+
+            // Aircraft
+            if (meta.aircraftType) bits.push(escapeHTML(meta.aircraftType));
+
+            if (!bits.length) return '';
+
+            const mainLine = bits.slice(0, 3).join(' · ');
+            const subLine = bits.slice(3).join(' · ');
+
+            let html = `<div class="text-[10px] font-bold text-gray-400 mt-2"><i class="fas fa-plane-departure mr-1"></i>${mainLine}</div>`;
+            if (subLine) {
+                html += `<div class="text-[9px] font-bold text-gray-300 mt-0.5 ml-4">${subLine}</div>`;
+            }
+            return html;
         }
 
         function renderHome() {
@@ -1442,7 +1485,48 @@
             document.getElementById('section-itinerary').classList.toggle('hidden', type !== 'itinerary');
             document.getElementById('section-transfer').classList.toggle('hidden', type !== 'transfer');
             document.getElementById('section-split').classList.toggle('hidden', type === 'transfer');
+
+            // Show/hide round-trip toggle based on itinerary sub-type
+            if (type === 'itinerary') updateFlightTripTypeUI();
         }
+
+        // Round-trip toggle logic
+        function updateFlightTripTypeUI() {
+            const itType = document.querySelector('input[name="itinerary-type"]:checked');
+            const isFlight = itType && itType.value === 'flight';
+            const toggle = document.getElementById('flight-roundtrip-toggle');
+            const returnSection = document.getElementById('flight-return');
+            const sectionLabel = document.getElementById('itinerary-section-label');
+            const titleInput = document.getElementById('itinerary-title');
+
+            if (toggle) toggle.classList.toggle('hidden', !isFlight);
+            if (!isFlight && returnSection) returnSection.classList.add('hidden');
+
+            // Swap labels based on itinerary type
+            if (isFlight) {
+                if (sectionLabel) sectionLabel.textContent = '航班信息';
+                if (titleInput) titleInput.placeholder = '航班号 (如 CA123)';
+                updateReturnVisibility();
+            } else {
+                if (sectionLabel) sectionLabel.textContent = '酒店信息';
+                if (titleInput) titleInput.placeholder = '酒店名称';
+            }
+        }
+
+        function updateReturnVisibility() {
+            const roundtripRadio = document.querySelector('input[name="flight-trip-type"][value="roundtrip"]');
+            const returnSection = document.getElementById('flight-return');
+            if (returnSection && roundtripRadio) {
+                returnSection.classList.toggle('hidden', !roundtripRadio.checked);
+            }
+        }
+
+        document.querySelectorAll('input[name="itinerary-type"]').forEach(r => {
+            r.addEventListener('change', updateFlightTripTypeUI);
+        });
+        document.querySelectorAll('input[name="flight-trip-type"]').forEach(r => {
+            r.addEventListener('change', updateReturnVisibility);
+        });
 
         typeBtns.forEach(btn => {
             btn.addEventListener('click', () => {
@@ -1498,6 +1582,18 @@
             editingBillId = record ? record.id : null;
             submitBtn.textContent = record ? '更新记录' : '保存记录';
 
+            // Reset round-trip fields
+            const onewayRadio = document.querySelector('input[name="flight-trip-type"][value="oneway"]');
+            if (onewayRadio) onewayRadio.checked = true;
+            const returnSection = document.getElementById('flight-return');
+            if (returnSection) returnSection.classList.add('hidden');
+            const retTitle = document.getElementById('itinerary-return-title');
+            if (retTitle) retTitle.value = '';
+            const retStart = document.getElementById('itinerary-return-start');
+            if (retStart) retStart.value = '';
+            const retEnd = document.getElementById('itinerary-return-end');
+            if (retEnd) retEnd.value = '';
+
             // Populate select dropdowns
             const opts = members.map(m => `<option value="${escapeHTML(m)}">${escapeHTML(m)}</option>`).join('');
             document.getElementById('modal-payer').innerHTML = opts;
@@ -1538,6 +1634,7 @@
                     document.getElementById('itinerary-title').value = record.desc || '';
                     document.getElementById('itinerary-start').value = toDateTimeInput(record.itineraryStart || record.timestamp);
                     document.getElementById('itinerary-end').value = toDateTimeInput(record.itineraryEnd || record.itineraryStart || record.timestamp);
+                    updateFlightTripTypeUI();
                 }
             } else {
                 document.getElementById('modal-payer').value = payerName;
@@ -1622,9 +1719,39 @@
             }
         }
 
+        // Local airline code -> name mapping (no API needed)
+        const AIRLINE_NAMES = {
+            'CA': '中国国际航空', 'MU': '中国东方航空', 'CZ': '中国南方航空', 'HU': '海南航空',
+            '3U': '四川航空', 'ZH': '深圳航空', 'MF': '厦门航空', 'FM': '上海航空',
+            'HO': '吉祥航空', 'JD': '首都航空', 'GS': '天津航空', '8L': '祥鹏航空',
+            'PN': '西部航空', 'G5': '华夏航空', 'SC': '山东航空', 'KN': '中国联合航空',
+            'EU': '成都航空', 'NS': '河北航空', 'BK': '奥凯航空', 'DZ': '东海航空',
+            '9C': '春秋航空', 'AQ': '九元航空', 'RY': '江西航空', 'QW': '青岛航空',
+            'TV': '西藏航空', 'KY': '昆明航空', 'OQ': '重庆航空', 'GJ': '长龙航空',
+            'DR': '瑞丽航空', 'FU': '福州航空', 'Y8': '金鹏航空', 'UQ': '乌鲁木齐航空',
+            'JL': '日本航空', 'NH': '全日空', 'MM': '乐桃航空', 'GK': '捷星日本',
+            'TG': '泰国国际航空', 'FD': '泰国亚航', 'SL': '泰国狮航', 'VZ': '泰国越捷',
+            'KE': '大韩航空', 'OZ': '韩亚航空', '7C': '济州航空', 'LJ': '真航空',
+            'SQ': '新加坡航空', 'TR': '酷航', 'CX': '国泰航空', 'UO': '香港快运',
+            'BR': '长荣航空', 'CI': '中华航空', 'IT': '台湾虎航',
+            'UA': '美联航', 'DL': '达美航空', 'AA': '美国航空', 'BA': '英国航空',
+            'AF': '法国航空', 'LH': '汉莎航空', 'EK': '阿联酋航空', 'QR': '卡塔尔航空',
+        };
+
         function extractFlightNo(text) {
-            const match = String(text || '').toUpperCase().match(/\b[A-Z0-9]{2}\s?\d{2,5}\b/);
-            return match ? match[0].replace(/\s+/g, '') : '';
+            // Match patterns like CA123, MU5678, 3U8765, JL086, etc.
+            const match = String(text || '').toUpperCase().match(/\b([A-Z0-9]{2})\s?(\d{2,5})\b/);
+            return match ? match[1] + match[2] : '';
+        }
+
+        function getAirlineFromCode(flightNo) {
+            if (!flightNo || flightNo.length < 3) return '';
+            // Try 2-char code first, then 2-char+digit
+            const code2 = flightNo.slice(0, 2);
+            if (AIRLINE_NAMES[code2]) return AIRLINE_NAMES[code2];
+            // Try 1-char+digit code (e.g., 3U, 8L, 9C)
+            const code1d = flightNo.slice(0, 2);
+            return AIRLINE_NAMES[code1d] || '';
         }
 
         async function enrichFlightRecord(record) {
@@ -1633,10 +1760,34 @@
             const flightNo = extractFlightNo(record.desc);
             if (!flightNo) return record;
 
+            // Always set flight number + local airline name (no API needed)
+            const localAirline = getAirlineFromCode(flightNo);
+            let enriched = 'none';
+            record.meta = {
+                ...(record.meta || {}),
+                flightNo: flightNo,
+                airline: record.meta?.airline || localAirline || ''
+            };
+            if (localAirline) {
+                enriched = 'airline';
+                if (!record.desc || record.desc.toUpperCase() === flightNo) {
+                    record.desc = `${flightNo} ${localAirline}`;
+                }
+            }
+
+            // Try API for route details (from/to), skip if no key
             let apiKey = localStorage.getItem('aviationstack_api_key');
+            if (apiKey === '__skipped__') {
+                record.meta._enriched = enriched;
+                return record;
+            }
             if (!apiKey) {
-                apiKey = prompt('联网查询航班详情需要 Aviationstack API Key。留空则跳过查询，仍会保存记录。');
-                if (!apiKey) return record;
+                apiKey = prompt('想自动识别航线（如 北京→东京）？请粘贴 Aviationstack API Key。\n留空跳过，航班号仍会保存。\n（免费注册：https://aviationstack.com/signup/free）');
+                if (!apiKey || !apiKey.trim()) {
+                    localStorage.setItem('aviationstack_api_key', '__skipped__');
+                    record.meta._enriched = enriched;
+                    return record;
+                }
                 localStorage.setItem('aviationstack_api_key', apiKey.trim());
             }
 
@@ -1648,30 +1799,51 @@
                 const payload = await response.json();
                 if (payload.error) throw new Error(payload.error.message || 'flight api error');
                 const flight = payload.data && payload.data[0];
-                if (!flight) return record;
+                if (!flight) {
+                    record.meta._enriched = enriched;
+                    return record;
+                }
 
                 const dep = flight.departure || {};
                 const arr = flight.arrival || {};
                 const airline = flight.airline || {};
                 const flightInfo = flight.flight || {};
+                const aircraft = flight.aircraft || {};
                 const depCode = dep.iata || dep.airport || '';
                 const arrCode = arr.iata || arr.airport || '';
 
+                // Extract all useful fields from API (max value per call)
                 record.meta = {
                     ...(record.meta || {}),
                     flightNo: flightInfo.iata || flightNo,
                     from: depCode,
                     to: arrCode,
-                    airline: airline.name || '',
+                    fromName: dep.airport || '',
+                    toName: arr.airport || '',
+                    airline: airline.name || record.meta.airline || localAirline || '',
                     status: flight.flight_status || '',
-                    scheduled: dep.scheduled || arr.scheduled || ''
+                    depScheduled: dep.scheduled || '',
+                    arrScheduled: arr.scheduled || '',
+                    depActual: dep.actual || '',
+                    arrActual: arr.actual || '',
+                    depTerminal: dep.terminal || '',
+                    depGate: dep.gate || '',
+                    arrTerminal: arr.terminal || '',
+                    arrGate: arr.gate || '',
+                    depDelay: dep.delay != null ? Number(dep.delay) : null,
+                    arrDelay: arr.delay != null ? Number(arr.delay) : null,
+                    aircraftType: aircraft?.iata || aircraft?.icao || '',
+                    aircraftReg: flight.aircraft?.registration || '',
+                    _enriched: depCode && arrCode ? 'full' : 'airline'
                 };
 
-                if (depCode && arrCode && (!record.desc || record.desc.toUpperCase() === flightNo)) {
-                    record.desc = `${flightInfo.iata || flightNo} ${depCode} -> ${arrCode}`;
+                if (depCode && arrCode) {
+                    record.desc = `${flightInfo.iata || flightNo} ${depCode} → ${arrCode}`;
+                    if (airline.name) record.desc += ` (${airline.name})`;
                 }
             } catch (err) {
-                record.meta = { ...(record.meta || {}), flightNo, lookupError: '航班查询失败' };
+                // API failed but we already have local airline info
+                record.meta = { ...(record.meta || {}), _enriched: enriched, lookupError: '航线查询失败' };
             }
             return record;
         }
@@ -1679,99 +1851,150 @@
         // Submit Logic
         document.getElementById('add-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const type = document.getElementById('record-type').value;
-            const amount = parseFloat(document.getElementById('input-amount').value);
-            const curr = document.getElementById('currency-selector').value.toUpperCase();
-            if(isNaN(amount) || amount <= 0) return showAlert('错误', '金额无效', 'error');
-
             const submitBtn = e.currentTarget.querySelector('button[type="submit"]');
-            submitBtn.disabled = true;
-            submitBtn.textContent = editingBillId ? '正在更新...' : '正在保存...';
+            try {
+                const type = document.getElementById('record-type').value;
+                const amount = parseFloat(document.getElementById('input-amount').value);
+                const curr = document.getElementById('currency-selector').value.toUpperCase();
+                if(isNaN(amount) || amount <= 0) return showAlert('错误', '金额无效', 'error');
 
-            const existing = editingBillId ? bills.find(b => b.id === editingBillId) : null;
-            const fxRate = await getRateForCurrency(curr, { promptForManual: true });
-            if (!(fxRate > 0)) {
-                submitBtn.disabled = false;
-                submitBtn.textContent = editingBillId ? '更新记录' : '保存记录';
-                return showAlert('汇率缺失', `无法换算 ${curr}，请联网获取或手动输入汇率后再保存。`, 'error');
-            }
-            const baseAmount = amount * fxRate;
-            
-            let record = {
-                id: editingBillId || Date.now().toString(),
-                type: type,
-                amount: amount,
-                currency: curr,
-                fxRate: fxRate,
-                baseAmount: baseAmount,
-                desc: document.getElementById('input-desc').value,
-                timestamp: existing ? existing.timestamp : new Date().toISOString(),
-                location: document.getElementById('location-text').textContent !== '获取定位' ? document.getElementById('location-text').textContent : '',
-                meta: existing ? { ...(existing.meta || {}) } : {}
-            };
+                submitBtn.disabled = true;
+                submitBtn.textContent = editingBillId ? '正在更新...' : '正在保存...';
 
-            if (type === 'expense') {
-                record.category = currentCategory;
-                record.desc = record.desc || categoryMeta[currentCategory].label;
-                record.payer = document.getElementById('modal-payer').value;
-                record.participants = Array.from(document.querySelectorAll('input[name="split-participants"]:checked')).map(cb => cb.value);
-                if(record.participants.length === 0) {
+                const existing = editingBillId ? bills.find(b => b.id === editingBillId) : null;
+                const fxRate = await getRateForCurrency(curr, { promptForManual: true });
+                if (!(fxRate > 0)) {
                     submitBtn.disabled = false;
                     submitBtn.textContent = editingBillId ? '更新记录' : '保存记录';
-                    return showAlert('错误', '需至少一人分摊', 'error');
+                    return showAlert('汇率缺失', `无法换算 ${curr}，请联网获取或手动输入汇率后再保存。`, 'error');
                 }
-            } else if (type === 'itinerary') {
-                const itType = document.querySelector('input[name="itinerary-type"]:checked').value;
-                record.itineraryType = itType;
-                record.category = itType; // 'flight' or 'hotel'
-                record.desc = document.getElementById('itinerary-title').value || (itType === 'flight'?'未命名航班':'未命名酒店');
-                record.note = document.getElementById('input-desc').value;
-                record.itineraryStart = document.getElementById('itinerary-start').value;
-                record.itineraryEnd = document.getElementById('itinerary-end').value;
-                if(!record.itineraryStart) {
-                    submitBtn.disabled = false;
-                    submitBtn.textContent = editingBillId ? '更新记录' : '保存记录';
-                    return showAlert('错误', '必须选择时间', 'error');
-                }
-                record.timestamp = safeDate(record.itineraryStart).toISOString();
+                const baseAmount = amount * fxRate;
                 
-                // Itinerary is also an expense
-                record.payer = document.getElementById('modal-payer').value;
-                record.participants = Array.from(document.querySelectorAll('input[name="split-participants"]:checked')).map(cb => cb.value);
-                if(record.participants.length === 0) {
-                    submitBtn.disabled = false;
-                    submitBtn.textContent = editingBillId ? '更新记录' : '保存记录';
-                    return showAlert('错误', '需至少一人分摊', 'error');
-                }
-                record = await enrichFlightRecord(record);
-            } else if (type === 'transfer') {
-                record.payer = document.getElementById('transfer-from').value;
-                record.receiver = document.getElementById('transfer-to').value;
-                record.desc = `${record.payer} 转给 ${record.receiver}`;
-                if(record.payer === record.receiver) {
-                    submitBtn.disabled = false;
-                    submitBtn.textContent = editingBillId ? '更新记录' : '保存记录';
-                    return showAlert('错误', '打款与收款人不能相同', 'error');
-                }
-            }
+                let record = {
+                    id: editingBillId || Date.now().toString(),
+                    type: type,
+                    amount: amount,
+                    currency: curr,
+                    fxRate: fxRate,
+                    baseAmount: baseAmount,
+                    desc: document.getElementById('input-desc').value,
+                    timestamp: existing ? existing.timestamp : new Date().toISOString(),
+                    location: document.getElementById('location-text').textContent !== '获取定位' ? document.getElementById('location-text').textContent : '',
+                    meta: existing ? { ...(existing.meta || {}) } : {}
+                };
 
-            if (editingBillId) {
-                const idx = bills.findIndex(b => b.id === editingBillId);
-                if (idx >= 0) bills[idx] = record;
-                else bills.push(record);
-            } else {
-                bills.push(record);
-            }
+                let returnRecord = null; // For round-trip flights
 
-            saveData();
-            await upsertCloudBill(record, { silent: true });
-            document.getElementById('location-text').textContent = '获取定位';
-            document.getElementById('btn-location').classList.remove('text-primary', 'bg-primary/10');
-            editingBillId = null;
-            submitBtn.disabled = false;
-            
-            // Go home
-            showView('home');
+                if (type === 'expense') {
+                    record.category = currentCategory;
+                    record.desc = record.desc || categoryMeta[currentCategory].label;
+                    record.payer = document.getElementById('modal-payer').value;
+                    record.participants = Array.from(document.querySelectorAll('input[name="split-participants"]:checked')).map(cb => cb.value);
+                    if(record.participants.length === 0) {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = editingBillId ? '更新记录' : '保存记录';
+                        return showAlert('错误', '需至少一人分摊', 'error');
+                    }
+                } else if (type === 'itinerary') {
+                    const itType = document.querySelector('input[name="itinerary-type"]:checked').value;
+                    record.itineraryType = itType;
+                    record.category = itType;
+                    record.desc = document.getElementById('itinerary-title').value || (itType === 'flight'?'未命名航班':'未命名酒店');
+                    record.note = document.getElementById('input-desc').value;
+                    record.itineraryStart = document.getElementById('itinerary-start').value;
+                    record.itineraryEnd = document.getElementById('itinerary-end').value;
+                    if(!record.itineraryStart) {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = editingBillId ? '更新记录' : '保存记录';
+                        return showAlert('错误', '必须选择去程时间', 'error');
+                    }
+                    record.timestamp = safeDate(record.itineraryStart).toISOString();
+                    
+                    record.payer = document.getElementById('modal-payer').value;
+                    record.participants = Array.from(document.querySelectorAll('input[name="split-participants"]:checked')).map(cb => cb.value);
+                    if(record.participants.length === 0) {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = editingBillId ? '更新记录' : '保存记录';
+                        return showAlert('错误', '需至少一人分摊', 'error');
+                    }
+                    record = await enrichFlightRecord(record);
+
+                    // Round-trip: create return record as well
+                    if (itType === 'flight' && !editingBillId) {
+                        const roundtripRadio = document.querySelector('input[name="flight-trip-type"][value="roundtrip"]');
+                        if (roundtripRadio && roundtripRadio.checked) {
+                            const retTitle = document.getElementById('itinerary-return-title')?.value?.trim();
+                            const retStart = document.getElementById('itinerary-return-start')?.value;
+                            const retEnd = document.getElementById('itinerary-return-end')?.value;
+                            if (retStart) {
+                                returnRecord = {
+                                    id: (Date.now() + 1).toString(),
+                                    type: 'itinerary',
+                                    amount: amount,
+                                    currency: curr,
+                                    fxRate: fxRate,
+                                    baseAmount: baseAmount,
+                                    desc: retTitle || '返程航班',
+                                    note: document.getElementById('input-desc').value,
+                                    timestamp: safeDate(retStart).toISOString(),
+                                    location: record.location,
+                                    meta: { ...(record.meta || {}), isReturn: true },
+                                    itineraryType: 'flight',
+                                    category: 'flight',
+                                    itineraryStart: retStart,
+                                    itineraryEnd: retEnd || retStart,
+                                    payer: record.payer,
+                                    participants: [...record.participants]
+                                };
+                                returnRecord = await enrichFlightRecord(returnRecord);
+                            }
+                        }
+                    }
+                } else if (type === 'transfer') {
+                    record.payer = document.getElementById('transfer-from').value;
+                    record.receiver = document.getElementById('transfer-to').value;
+                    record.desc = `${record.payer} 转给 ${record.receiver}`;
+                    if(record.payer === record.receiver) {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = editingBillId ? '更新记录' : '保存记录';
+                        return showAlert('错误', '打款与收款人不能相同', 'error');
+                    }
+                }
+
+                if (editingBillId) {
+                    const idx = bills.findIndex(b => b.id === editingBillId);
+                    if (idx >= 0) bills[idx] = record;
+                    else bills.push(record);
+                } else {
+                    bills.push(record);
+                    if (returnRecord) bills.push(returnRecord);
+                }
+
+                saveData();
+                await upsertCloudBill(record, { silent: true });
+                if (returnRecord) await upsertCloudBill(returnRecord, { silent: true });
+                document.getElementById('location-text').textContent = '获取定位';
+                document.getElementById('btn-location').classList.remove('text-primary', 'bg-primary/10');
+                editingBillId = null;
+
+                // Show enrichment result for flights
+                if (record.type === 'itinerary' && record.itineraryType === 'flight') {
+                    const enriched = record.meta?._enriched;
+                    if (enriched === 'full') {
+                        setCloudMessage(`已识别航线：${record.desc}`, 'success');
+                    } else if (enriched === 'airline') {
+                        setCloudMessage(`已识别航司：${record.meta?.airline || record.desc}（配置 API Key 可识别航线）`, 'muted');
+                    }
+                }
+                
+                showView('home');
+            } catch (err) {
+                console.error('Save failed:', err);
+                showAlert('保存失败', err.message || '保存时出错，请重试。', 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = '保存记录';
+            }
         });
 
         window.openEditBill = function(id) {
@@ -1925,21 +2148,42 @@
             setupAddForm();
         };
 
-        window.saveTripSettings = function() {
-            tripData.name = document.getElementById('trip-name-input').value.trim() || '未命名旅程';
-            localStorage.setItem('travel2CustomTripTitle', '1');
-            tripData.budget = parseFloat(document.getElementById('trip-budget-input').value) || 10000;
-            tripData.baseCurrency = tripData.baseCurrency || BASE_CURRENCY;
-            tripData.foreignCurrency = document.getElementById('trip-currency-input').value.trim().toUpperCase() || 'THB';
-            tripData.rate = parseFloat(document.getElementById('trip-rate-input').value) || 1;
-            tripData.fxRates = tripData.fxRates || {};
-            tripData.categoryBudgets = tripData.categoryBudgets || {};
-            saveData();
-            createOrUpdateCloudTrip({ silent: true });
-            initHeader();
-            renderHome();
-            setupAddForm();
-            hideModal('members-modal');
+        window.saveTripSettings = async function() {
+            const saveBtn = document.querySelector('#members-modal button[onclick="saveTripSettings()"]');
+            try {
+                // Loading state
+                if (saveBtn) {
+                    saveBtn.disabled = true;
+                    saveBtn.classList.add('opacity-60');
+                    saveBtn.textContent = '正在保存...';
+                }
+
+                tripData.name = document.getElementById('trip-name-input').value.trim() || '未命名旅程';
+                localStorage.setItem('travel2CustomTripTitle', '1');
+                tripData.budget = parseFloat(document.getElementById('trip-budget-input').value) || 10000;
+                tripData.baseCurrency = tripData.baseCurrency || BASE_CURRENCY;
+                tripData.foreignCurrency = document.getElementById('trip-currency-input').value.trim().toUpperCase() || 'THB';
+                tripData.rate = parseFloat(document.getElementById('trip-rate-input').value) || 1;
+                tripData.fxRates = tripData.fxRates || {};
+                tripData.categoryBudgets = tripData.categoryBudgets || {};
+                saveData();
+
+                // Await cloud sync so errors are properly caught
+                await createOrUpdateCloudTrip({ silent: true });
+
+                initHeader();
+                renderHome();
+                setupAddForm();
+                hideModal('members-modal');
+            } catch (err) {
+                showAlert('保存失败', err.message || '保存设置时出错，请重试。', 'error');
+            } finally {
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.classList.remove('opacity-60');
+                    saveBtn.textContent = '保存设置';
+                }
+            }
         };
 
         // Initialize
