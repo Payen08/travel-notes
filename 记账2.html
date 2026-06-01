@@ -392,8 +392,12 @@
                     </div>
                     <div id="cloud-login-panel" class="space-y-3">
                         <input type="email" id="cloud-email-input" placeholder="邮箱账号" class="w-full bg-gray-50 rounded-xl py-3 px-4 text-sm font-bold focus:outline-none">
+                        <input type="password" id="cloud-password-input" placeholder="密码（至少 6 位）" class="w-full bg-gray-50 rounded-xl py-3 px-4 text-sm font-bold focus:outline-none">
                         <input type="text" id="cloud-name-input" placeholder="你的显示名" class="w-full bg-gray-50 rounded-xl py-3 px-4 text-sm font-bold focus:outline-none">
-                        <button type="button" id="btn-cloud-login" class="w-full bg-primary text-white font-bold py-3 rounded-xl text-sm">发送登录链接</button>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button type="button" id="btn-cloud-login" class="bg-primary text-white font-bold py-3 rounded-xl text-sm">登录</button>
+                            <button type="button" id="btn-cloud-register" class="bg-gray-100 text-gray-600 font-bold py-3 rounded-xl text-sm">注册</button>
+                        </div>
                     </div>
                     <div id="cloud-sync-panel" class="hidden space-y-3">
                         <div class="text-xs font-bold text-gray-400" id="cloud-user-text"></div>
@@ -517,7 +521,6 @@
         let cloudTripId = localStorage.getItem('travel2CloudTripId') || '';
         let cloudSubscription = null;
         let cloudPullTimer = null;
-        let cloudLoginCooldownTimer = null;
 
         migrateLegacyAccountingData();
         normalizeBills();
@@ -645,45 +648,6 @@
             el.className = classes[variant] || classes.off;
         }
 
-        function cloudLoginCooldownRemaining() {
-            const until = Number(localStorage.getItem('travel2CloudLoginCooldownUntil') || 0);
-            return Math.max(0, Math.ceil((until - Date.now()) / 1000));
-        }
-
-        function extractCloudCooldownSeconds(message) {
-            const match = String(message || '').match(/after\s+(\d+)\s+seconds?/i);
-            return match ? Number(match[1]) : 60;
-        }
-
-        function updateCloudLoginCooldown() {
-            const btn = document.getElementById('btn-cloud-login');
-            if (!btn) return 0;
-            const remaining = cloudLoginCooldownRemaining();
-            if (remaining > 0) {
-                btn.disabled = true;
-                btn.textContent = `${remaining} 秒后重试`;
-                btn.classList.add('opacity-60');
-                setCloudMessage(`Supabase 限制邮件发送频率，请 ${remaining} 秒后再试。`, 'muted');
-                return remaining;
-            }
-
-            localStorage.removeItem('travel2CloudLoginCooldownUntil');
-            btn.disabled = false;
-            btn.textContent = '发送登录链接';
-            btn.classList.remove('opacity-60');
-            return 0;
-        }
-
-        function startCloudLoginCooldown(seconds) {
-            const cooldown = Math.max(1, Number(seconds || 60));
-            localStorage.setItem('travel2CloudLoginCooldownUntil', String(Date.now() + cooldown * 1000));
-            updateCloudLoginCooldown();
-            clearInterval(cloudLoginCooldownTimer);
-            cloudLoginCooldownTimer = setInterval(() => {
-                if (updateCloudLoginCooldown() === 0) clearInterval(cloudLoginCooldownTimer);
-            }, 1000);
-        }
-
         function cloudDisplayName() {
             return localStorage.getItem('travel2CloudDisplayName') || members[0] || '我';
         }
@@ -718,7 +682,7 @@
                 loginPanel.classList.remove('hidden');
                 syncPanel.classList.add('hidden');
                 setCloudAuthStatus('未登录', 'off');
-                if (!updateCloudLoginCooldown()) setCloudMessage('输入邮箱后会收到登录链接。', 'muted');
+                setCloudMessage('使用邮箱和密码登录；新用户请先注册。', 'muted');
                 return;
             }
 
@@ -833,37 +797,75 @@
             };
         }
 
-        async function sendCloudLogin() {
-            if (!cloudClient) return showAlert('云同步不可用', '请检查 SUPABASE_CONFIG 是否已填写。', 'error');
-            const remaining = cloudLoginCooldownRemaining();
-            if (remaining > 0) {
-                updateCloudLoginCooldown();
-                return showAlert('稍后再试', `Supabase 限制邮件发送频率，请 ${remaining} 秒后再试。`, 'warning');
-            }
-
+        function cloudAuthFields() {
             const email = document.getElementById('cloud-email-input').value.trim();
+            const password = document.getElementById('cloud-password-input').value;
             const displayName = document.getElementById('cloud-name-input').value.trim() || '我';
-            if (!email) return showAlert('缺少邮箱', '请输入用于登录的邮箱。', 'error');
+            return { email, password, displayName };
+        }
 
+        function setCloudAuthButtonsLoading(isLoading, label = '') {
+            const loginBtn = document.getElementById('btn-cloud-login');
+            const registerBtn = document.getElementById('btn-cloud-register');
+            [loginBtn, registerBtn].forEach(btn => {
+                if (!btn) return;
+                btn.disabled = isLoading;
+                btn.classList.toggle('opacity-60', isLoading);
+            });
+            loginBtn.textContent = isLoading ? label : '登录';
+            registerBtn.textContent = isLoading ? '请稍候' : '注册';
+        }
+
+        function cloudAuthErrorMessage(message) {
+            const text = String(message || '');
+            if (/Invalid login credentials/i.test(text)) return '邮箱或密码不正确。';
+            if (/Email not confirmed/i.test(text)) return '邮箱还没有确认，请先去邮箱点击确认链接，或在 Supabase Auth 设置里关闭 Confirm email。';
+            if (/User already registered|already registered/i.test(text)) return '这个邮箱已经注册过了，请直接登录。';
+            if (/Password should be at least/i.test(text)) return '密码长度不够，请至少输入 6 位。';
+            return text || '操作失败。';
+        }
+
+        async function loginCloudAccount() {
+            if (!cloudClient) return showAlert('云同步不可用', '请检查 SUPABASE_CONFIG 是否已填写。', 'error');
+            const { email, password, displayName } = cloudAuthFields();
+            if (!email) return showAlert('缺少邮箱', '请输入邮箱账号。', 'error');
+            if (!password) return showAlert('缺少密码', '请输入密码。', 'error');
             localStorage.setItem('travel2CloudDisplayName', displayName);
-            const options = {};
+
+            setCloudAuthButtonsLoading(true, '登录中...');
+            const { data, error } = await cloudClient.auth.signInWithPassword({ email, password });
+            setCloudAuthButtonsLoading(false);
+            if (error) return showAlert('登录失败', cloudAuthErrorMessage(error.message), 'error');
+            cloudSession = data.session || null;
+            renderCloudState();
+            if (cloudTripId) await pullCloudTrip({ silent: true });
+        }
+
+        async function registerCloudAccount() {
+            if (!cloudClient) return showAlert('云同步不可用', '请检查 SUPABASE_CONFIG 是否已填写。', 'error');
+            const { email, password, displayName } = cloudAuthFields();
+            if (!email) return showAlert('缺少邮箱', '请输入邮箱账号。', 'error');
+            if (!password || password.length < 6) return showAlert('密码太短', '密码至少需要 6 位。', 'error');
+            localStorage.setItem('travel2CloudDisplayName', displayName);
+
+            const options = {
+                data: { display_name: displayName }
+            };
             const redirectTo = cloudRedirectUrl();
             if (redirectTo) options.emailRedirectTo = redirectTo;
 
-            const loginBtn = document.getElementById('btn-cloud-login');
-            loginBtn.disabled = true;
-            loginBtn.textContent = '正在发送...';
-            loginBtn.classList.add('opacity-60');
+            setCloudAuthButtonsLoading(true, '注册中...');
+            const { data, error } = await cloudClient.auth.signUp({ email, password, options });
+            setCloudAuthButtonsLoading(false);
+            if (error) return showAlert('注册失败', cloudAuthErrorMessage(error.message), 'error');
 
-            const { error } = await cloudClient.auth.signInWithOtp({ email, options });
-            if (error) {
-                const cooldown = extractCloudCooldownSeconds(error.message);
-                startCloudLoginCooldown(cooldown);
-                return showAlert('发送太频繁', `Supabase 为了安全限制了邮件发送频率，请 ${cooldown} 秒后再试。`, 'warning');
+            cloudSession = data.session || null;
+            renderCloudState();
+            if (cloudSession) {
+                showAlert('注册成功', '账号已创建并登录。', 'info');
+            } else {
+                showAlert('需要确认邮箱', '注册成功，请先去邮箱点击确认链接；或者在 Supabase Auth 里关闭 Confirm email。', 'info');
             }
-
-            startCloudLoginCooldown(60);
-            setCloudMessage('登录链接已发送，请去邮箱点击链接。', 'success');
         }
 
         async function logoutCloud() {
@@ -1776,7 +1778,8 @@
             renderCloudState();
             showModal('cloud-modal');
         });
-        document.getElementById('btn-cloud-login').addEventListener('click', sendCloudLogin);
+        document.getElementById('btn-cloud-login').addEventListener('click', loginCloudAccount);
+        document.getElementById('btn-cloud-register').addEventListener('click', registerCloudAccount);
         document.getElementById('btn-cloud-logout').addEventListener('click', logoutCloud);
         document.getElementById('btn-cloud-create').addEventListener('click', () => createOrUpdateCloudTrip());
         document.getElementById('btn-cloud-pull').addEventListener('click', () => pullCloudTrip());

@@ -1,6 +1,6 @@
 # Travel Notes
 
-旅行记账 PWA，支持行程、支出、预算、AA 分账、Supabase 登录与云同步。
+旅行记账 PWA，支持行程、支出、预算、AA 分账、Supabase 邮箱密码登录与云同步。
 
 ## GitHub Pages
 
