@@ -1,0 +1,20 @@
+{
+  "name": "旅行记账",
+  "short_name": "旅行记账",
+  "description": "记录旅行行程、支出、预算和 AA 分账。",
+  "start_url": "./记账2.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#685df5",
+  "orientation": "portrait",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
