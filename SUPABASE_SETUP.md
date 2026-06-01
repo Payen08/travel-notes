@@ -8,7 +8,9 @@
    - `http://localhost:8000/auth-callback.html`
    - `https://YOUR_GITHUB_USERNAME.github.io/YOUR_REPO/auth-callback.html`
 5. In Authentication > Providers > Email, enable Email + Password.
-6. For local testing, turn off Confirm email if you do not want confirmation emails.
+6. Turn off Confirm email if you want registration to work without waiting for email.
+   - This is recommended for this static GitHub Pages version.
+   - If Confirm email stays on, Supabase must successfully send the confirmation email before login works.
 7. In `记账2.html`, fill `SUPABASE_CONFIG.url` and `SUPABASE_CONFIG.anonKey`.
 8. Deploy the folder to GitHub Pages.
 
