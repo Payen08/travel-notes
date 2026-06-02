@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <meta name="theme-color" content="#ffffff">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -14,6 +17,7 @@
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script>
         tailwind.config = {
             theme: {
@@ -233,32 +237,152 @@
                 <!-- Itinerary Specific: Details -->
                 <div id="section-itinerary" class="hidden mb-6 bg-white p-5 rounded-[24px] shadow-sm">
                     <div class="flex gap-2 mb-4">
-                        <label class="flex items-center gap-2 text-sm font-bold"><input type="radio" name="itinerary-type" value="flight" checked> <i class="fas fa-plane"></i> 航班</label>
-                        <label class="flex items-center gap-2 text-sm font-bold ml-4"><input type="radio" name="itinerary-type" value="hotel"> <i class="fas fa-bed"></i> 酒店</label>
+                        <button type="button" class="itinerary-type-btn active flex-1 flex flex-col items-center justify-center bg-white border-2 border-primary rounded-2xl p-3 text-primary transition-all" data-it-type="flight">
+                            <i class="fas fa-plane text-xl mb-1"></i>
+                            <span class="text-xs font-bold">航班</span>
+                        </button>
+                        <button type="button" class="itinerary-type-btn flex-1 flex flex-col items-center justify-center bg-white border-2 border-gray-100 rounded-2xl p-3 text-gray-400 transition-all" data-it-type="hotel">
+                            <i class="fas fa-bed text-xl mb-1"></i>
+                            <span class="text-xs font-bold">酒店</span>
+                        </button>
+                        <input type="hidden" name="itinerary-type" value="flight">
                     </div>
-                    <!-- Round-trip toggle (flight only) -->
-                    <div id="flight-roundtrip-toggle" class="flex gap-2 mb-3">
-                        <label class="flex items-center gap-2 text-xs font-bold"><input type="radio" name="flight-trip-type" value="oneway" checked> 单程</label>
-                        <label class="flex items-center gap-2 text-xs font-bold ml-3"><input type="radio" name="flight-trip-type" value="roundtrip"> 往返</label>
-                    </div>
-                    <!-- Main itinerary fields -->
-                    <div id="flight-outbound" class="border border-gray-100 rounded-xl p-3 mb-2">
-                        <div id="itinerary-section-label" class="text-[10px] font-extrabold text-primary uppercase tracking-wide mb-2">航班信息</div>
-                        <input type="text" id="itinerary-title" placeholder="航班号 (如 CA123)" class="w-full bg-gray-50 border-none rounded-xl py-3 px-4 text-sm font-bold mb-2 focus:outline-none">
-                        <div class="flex gap-1">
-                            <input type="datetime-local" id="itinerary-start" class="min-w-0 flex-1 bg-gray-50 border-none rounded-xl py-3 px-1.5 text-[11px] font-bold focus:outline-none text-gray-500">
-                            <span class="flex items-center text-gray-400 text-[11px] shrink-0">至</span>
-                            <input type="datetime-local" id="itinerary-end" class="min-w-0 flex-1 bg-gray-50 border-none rounded-xl py-3 px-1.5 text-[11px] font-bold focus:outline-none text-gray-500">
+
+                    <!-- ===== FLIGHT FIELDS ===== -->
+                    <div id="flight-fields">
+                        <!-- Round-trip toggle -->
+                        <div id="flight-roundtrip-toggle" class="flex gap-2 mb-3">
+                            <button type="button" class="flight-trip-type-btn active flex-1 py-2 text-xs font-bold rounded-xl border-2 border-primary text-primary bg-primary/5 transition-all" data-trip-type="oneway">单程</button>
+                            <button type="button" class="flight-trip-type-btn flex-1 py-2 text-xs font-bold rounded-xl border-2 border-gray-100 text-gray-400 transition-all" data-trip-type="roundtrip">往返</button>
+                            <input type="hidden" name="flight-trip-type" value="oneway">
+                        </div>
+                        <!-- Outbound -->
+                        <div id="flight-outbound" class="border border-gray-100 rounded-xl p-3 mb-2">
+                            <div class="text-[10px] font-extrabold text-primary uppercase tracking-wide mb-2">去程</div>
+                            <div class="flex gap-2 mb-2">
+                                <input type="text" id="itinerary-title" placeholder="航班号 (如 NH816)" class="flex-1 bg-gray-50 border-none rounded-xl py-3 px-4 text-sm font-bold focus:outline-none">
+                                <button type="button" id="btn-flight-lookup" class="shrink-0 bg-primary text-white font-bold py-2 px-4 rounded-xl text-xs flex items-center gap-1 hover:opacity-90 transition-opacity" onclick="lookupFlightInfo('outbound')">
+                                    <i class="fas fa-search"></i> 查询
+                                </button>
+                            </div>
+                            <div class="flex gap-1 mb-2">
+                                <input type="text" id="flight-from" placeholder="出发机场 (如 PEK)" class="min-w-0 flex-1 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none uppercase">
+                                <span class="flex items-center text-gray-300 text-xs shrink-0"><i class="fas fa-long-arrow-alt-right"></i></span>
+                                <input type="text" id="flight-to" placeholder="到达机场 (如 NRT)" class="min-w-0 flex-1 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none uppercase">
+                            </div>
+                            <div class="flex gap-1 mb-2">
+                                <div class="min-w-0 flex-1">
+                                    <input type="datetime-local" id="itinerary-start" class="w-full bg-gray-50 border-none rounded-xl py-2 px-1.5 text-[11px] font-bold focus:outline-none text-gray-500">
+                                    <select id="flight-from-tz" class="w-full bg-gray-50 border-none rounded-lg py-1 px-1 text-[10px] font-bold text-gray-400 focus:outline-none mt-0.5">
+                                        <option value="+8">UTC+8 北京</option><option value="+9">UTC+9 东京</option><option value="+7">UTC+7 曼谷</option><option value="+5.5">UTC+5:30 印度</option><option value="+0">UTC+0 伦敦</option><option value="-5">UTC-5 纽约</option><option value="-8">UTC-8 洛杉矶</option>
+                                    </select>
+                                </div>
+                                <span class="flex items-center text-gray-300 text-xs shrink-0 pt-3"><i class="fas fa-arrow-right"></i></span>
+                                <div class="min-w-0 flex-1">
+                                    <input type="datetime-local" id="itinerary-end" class="w-full bg-gray-50 border-none rounded-xl py-2 px-1.5 text-[11px] font-bold focus:outline-none text-gray-500">
+                                    <select id="flight-to-tz" class="w-full bg-gray-50 border-none rounded-lg py-1 px-1 text-[10px] font-bold text-gray-400 focus:outline-none mt-0.5">
+                                        <option value="+9">UTC+9 东京</option><option value="+8">UTC+8 北京</option><option value="+7">UTC+7 曼谷</option><option value="+5.5">UTC+5:30 印度</option><option value="+0">UTC+0 伦敦</option><option value="-5">UTC-5 纽约</option><option value="-8">UTC-8 洛杉矶</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="flex gap-2">
+                                <select id="flight-cabin" class="flex-1 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none text-gray-600">
+                                    <option value="economy">经济舱</option><option value="business">商务舱</option><option value="first">头等舱</option>
+                                </select>
+                            </div>
+                            <!-- Expandable: more flight details -->
+                            <button type="button" id="btn-flight-more" class="w-full text-[10px] font-bold text-gray-400 hover:text-primary mt-2 py-1" onclick="toggleFlightMore()">
+                                <i class="fas fa-chevron-down mr-1"></i>更多信息
+                            </button>
+                            <div id="flight-more" class="hidden space-y-2 mt-2 pt-2 border-t border-gray-100">
+                                <div class="text-[10px] font-extrabold text-gray-400 uppercase tracking-wide">行李规则</div>
+                                <div class="flex gap-2">
+                                    <input type="text" id="flight-baggage-free" placeholder="免费额度 (如 23kg×2)" class="flex-1 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
+                                    <input type="text" id="flight-baggage-excess" placeholder="超重费" class="flex-1 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
+                                </div>
+                                <div class="text-[10px] font-extrabold text-gray-400 uppercase tracking-wide mt-1">中转信息</div>
+                                <div class="flex gap-2">
+                                    <input type="text" id="flight-transit-airport" placeholder="中转机场 (如 ICN)" class="flex-1 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none uppercase">
+                                    <input type="text" id="flight-transit-duration" placeholder="停留时长 (如 2h30m)" class="flex-1 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
+                                </div>
+                                <div class="text-[10px] font-extrabold text-gray-400 uppercase tracking-wide mt-1">订单 & 存档</div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <input type="text" id="flight-platform" placeholder="购票平台 (如 携程旅行)" class="min-w-0 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
+                                    <input type="text" id="flight-seat-no" placeholder="座位号 (如 12A)" class="min-w-0 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
+                                </div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <input type="text" id="flight-ticket-no" placeholder="客票号 / 乘客号" class="min-w-0 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
+                                    <input type="text" id="flight-aircraft-type" placeholder="机型 (如 A320-200)" class="min-w-0 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
+                                </div>
+                                <input type="text" id="flight-order-no" placeholder="订单号 / 票号" class="w-full bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
+                                <div class="flex gap-2 items-center">
+                                    <input type="text" id="flight-screenshot" placeholder="机票截图链接 (可留空)" class="flex-1 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
+                                    <button type="button" class="shrink-0 bg-gray-100 text-gray-500 py-2 px-3 rounded-xl text-xs font-bold" onclick="document.getElementById('flight-screenshot-file').click()"><i class="fas fa-camera"></i></button>
+                                    <input type="file" id="flight-screenshot-file" accept="image/*" class="hidden" onchange="handleFlightScreenshot(this)">
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Return (hidden for oneway) -->
+                        <div id="flight-return" class="hidden border border-gray-100 rounded-xl p-3">
+                            <div class="text-[10px] font-extrabold text-orange-500 uppercase tracking-wide mb-2">返程</div>
+                            <div class="flex gap-2 mb-2">
+                                <input type="text" id="itinerary-return-title" placeholder="返程航班号 (如 NH815)" class="flex-1 bg-gray-50 border-none rounded-xl py-3 px-4 text-sm font-bold focus:outline-none">
+                                <button type="button" id="btn-flight-lookup-return" class="shrink-0 bg-orange-500 text-white font-bold py-2 px-4 rounded-xl text-xs flex items-center gap-1 hover:opacity-90 transition-opacity" onclick="lookupFlightInfo('return')">
+                                    <i class="fas fa-search"></i> 查询
+                                </button>
+                            </div>
+                            <div class="flex gap-1 mb-2">
+                                <input type="text" id="flight-return-from" placeholder="出发机场" class="min-w-0 flex-1 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none uppercase">
+                                <span class="flex items-center text-gray-300 text-xs shrink-0"><i class="fas fa-long-arrow-alt-right"></i></span>
+                                <input type="text" id="flight-return-to" placeholder="到达机场" class="min-w-0 flex-1 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none uppercase">
+                            </div>
+                            <div class="flex gap-1 mb-2">
+                                <input type="datetime-local" id="itinerary-return-start" class="min-w-0 flex-1 bg-gray-50 border-none rounded-xl py-3 px-1.5 text-[11px] font-bold focus:outline-none text-gray-500">
+                                <span class="flex items-center text-gray-400 text-[11px] shrink-0">至</span>
+                                <input type="datetime-local" id="itinerary-return-end" class="min-w-0 flex-1 bg-gray-50 border-none rounded-xl py-3 px-1.5 text-[11px] font-bold focus:outline-none text-gray-500">
+                            </div>
+                            <select id="flight-return-cabin" class="w-full bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none text-gray-600">
+                                <option value="economy">经济舱</option><option value="business">商务舱</option><option value="first">头等舱</option>
+                            </select>
                         </div>
                     </div>
-                    <!-- Return (hidden for oneway) -->
-                    <div id="flight-return" class="hidden border border-gray-100 rounded-xl p-3">
-                        <div class="text-[10px] font-extrabold text-orange-500 uppercase tracking-wide mb-2">返程</div>
-                        <input type="text" id="itinerary-return-title" placeholder="返程航班号 (如 CA124)" class="w-full bg-gray-50 border-none rounded-xl py-3 px-4 text-sm font-bold mb-2 focus:outline-none">
-                        <div class="flex gap-1">
-                            <input type="datetime-local" id="itinerary-return-start" class="min-w-0 flex-1 bg-gray-50 border-none rounded-xl py-3 px-1.5 text-[11px] font-bold focus:outline-none text-gray-500">
-                            <span class="flex items-center text-gray-400 text-[11px] shrink-0">至</span>
-                            <input type="datetime-local" id="itinerary-return-end" class="min-w-0 flex-1 bg-gray-50 border-none rounded-xl py-3 px-1.5 text-[11px] font-bold focus:outline-none text-gray-500">
+
+                    <!-- ===== HOTEL FIELDS ===== -->
+                    <div id="hotel-fields" class="hidden">
+                        <div class="border border-gray-100 rounded-xl p-3">
+                            <div class="text-[10px] font-extrabold text-primary uppercase tracking-wide mb-2">酒店信息</div>
+                            <input type="text" id="hotel-name" placeholder="酒店名称" class="w-full bg-gray-50 border-none rounded-xl py-3 px-4 text-sm font-bold mb-2 focus:outline-none">
+                            <div class="flex gap-1 mb-2">
+                                <input type="text" id="hotel-address" placeholder="地址" class="flex-1 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
+                                <a id="hotel-map-link" href="#" target="_blank" class="shrink-0 bg-gray-100 text-gray-500 py-2 px-3 rounded-xl text-xs font-bold flex items-center gap-1" title="在地图查看"><i class="fas fa-map-marker-alt"></i></a>
+                            </div>
+                            <div class="flex gap-1 mb-2">
+                                <input type="date" id="hotel-checkin" class="min-w-0 flex-1 bg-gray-50 border-none rounded-xl py-2 px-1.5 text-[11px] font-bold focus:outline-none text-gray-500">
+                                <span class="flex items-center text-gray-300 text-xs shrink-0">→</span>
+                                <input type="date" id="hotel-checkout" class="min-w-0 flex-1 bg-gray-50 border-none rounded-xl py-2 px-1.5 text-[11px] font-bold focus:outline-none text-gray-500">
+                                <span id="hotel-nights" class="flex items-center text-[10px] font-bold text-primary shrink-0 bg-primary/10 px-2 rounded-lg">0晚</span>
+                            </div>
+                            <div class="flex gap-2 mb-2">
+                                <div class="flex-1">
+                                    <label class="text-[9px] font-bold text-gray-400">每晚价格</label>
+                                    <input type="number" id="hotel-price-night" placeholder="0" step="0.01" class="w-full bg-gray-50 border-none rounded-xl py-2 px-3 text-sm font-bold focus:outline-none">
+                                </div>
+                                <div class="flex items-end text-[10px] font-bold text-gray-400 pb-2">×</div>
+                                <div class="flex-1">
+                                    <label class="text-[9px] font-bold text-gray-400">总费用 (自动)</label>
+                                    <input type="number" id="hotel-price-total" placeholder="0" step="0.01" readonly class="w-full bg-gray-100 border-none rounded-xl py-2 px-3 text-sm font-bold text-primary focus:outline-none">
+                                </div>
+                            </div>
+                            <select id="hotel-platform" class="w-full bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none text-gray-600 mb-2">
+                                <option value="">预订平台 (选填)</option>
+                                <option value="Booking">Booking.com</option><option value="Agoda">Agoda</option><option value="Expedia">Expedia</option><option value="携程">携程</option><option value="Airbnb">Airbnb</option><option value="官网">酒店官网</option><option value="其他">其他</option>
+                            </select>
+                            <div class="flex gap-2 mb-2">
+                                <input type="text" id="hotel-confirm-no" placeholder="确认号" class="flex-1 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
+                                <label class="flex items-center gap-1 text-xs font-bold text-gray-500 shrink-0 bg-gray-50 rounded-xl py-2 px-3 cursor-pointer">
+                                    <input type="checkbox" id="hotel-breakfast" class="accent-primary"> 含早餐
+                                </label>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -291,6 +415,57 @@
                             <label class="block text-xs font-bold text-gray-400 mb-1">收款人</label>
                             <select id="transfer-to" class="w-full bg-gray-50 rounded-xl py-2 px-2 text-sm font-bold focus:outline-none"></select>
                         </div>
+                    </div>
+                </div>
+
+                <!-- Ground Transport -->
+                <div id="section-ground-transport" class="hidden mb-6 bg-white p-5 rounded-[24px] shadow-sm space-y-2">
+                    <div class="text-[10px] font-extrabold text-primary uppercase tracking-wide mb-2"><i class="fas fa-bus mr-1"></i>地面交通</div>
+                    <select id="transport-type" class="w-full bg-gray-50 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none text-gray-600">
+                        <option value="">交通方式</option><option value="shinkansen">新干线</option><option value="bus">巴士</option><option value="taxi">出租车</option><option value="subway">地铁</option><option value="rental">租车</option><option value="ferry">轮渡</option><option value="other">其他</option>
+                    </select>
+                    <div class="flex gap-2">
+                        <input type="text" id="transport-from" placeholder="出发地" class="flex-1 bg-gray-50 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
+                        <i class="fas fa-arrow-right text-gray-300 self-center"></i>
+                        <input type="text" id="transport-to" placeholder="到达地" class="flex-1 bg-gray-50 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
+                    </div>
+                    <input type="datetime-local" id="transport-time" class="w-full bg-gray-50 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none text-gray-500">
+                    <div class="flex gap-2 items-center">
+                        <input type="text" id="transport-photo" placeholder="票据照片链接" class="flex-1 bg-gray-50 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
+                        <button type="button" class="shrink-0 bg-gray-100 text-gray-500 py-2 px-3 rounded-xl text-xs font-bold" onclick="document.getElementById('transport-photo-file').click()"><i class="fas fa-camera"></i></button>
+                        <input type="file" id="transport-photo-file" accept="image/*" class="hidden" onchange="handleTransportPhoto(this)">
+                    </div>
+                </div>
+
+                <!-- Dining -->
+                <div id="section-dining" class="hidden mb-6 bg-white p-5 rounded-[24px] shadow-sm space-y-2">
+                    <div class="text-[10px] font-extrabold text-primary uppercase tracking-wide mb-2"><i class="fas fa-utensils mr-1"></i>餐饮</div>
+                    <input type="text" id="dining-name" placeholder="餐厅名称（选填）" class="w-full bg-gray-50 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
+                    <select id="dining-meal-type" class="w-full bg-gray-50 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none text-gray-600">
+                        <option value="">餐别</option><option value="breakfast">早餐</option><option value="lunch">午餐</option><option value="dinner">晚餐</option><option value="coffee">咖啡/下午茶</option><option value="snack">小吃/夜宵</option><option value="other">其他</option>
+                    </select>
+                    <div class="flex gap-2">
+                        <input type="number" id="dining-diners" placeholder="用餐人数" min="1" class="flex-1 bg-gray-50 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
+                        <input type="text" id="dining-rating" placeholder="评分/备注" class="flex-1 bg-gray-50 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
+                    </div>
+                </div>
+
+                <!-- Attraction -->
+                <div id="section-attraction" class="hidden mb-6 bg-white p-5 rounded-[24px] shadow-sm space-y-2">
+                    <div class="text-[10px] font-extrabold text-primary uppercase tracking-wide mb-2"><i class="fas fa-ticket-alt mr-1"></i>景点 & 活动</div>
+                    <input type="text" id="attraction-name" placeholder="活动名称（景点/演出/温泉…）" class="w-full bg-gray-50 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
+                    <input type="datetime-local" id="attraction-time" class="w-full bg-gray-50 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none text-gray-500">
+                    <div class="flex gap-2">
+                        <input type="number" id="attraction-price-per" placeholder="单价/人" step="0.01" class="flex-1 bg-gray-50 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
+                        <span class="self-center text-xs text-gray-400">×</span>
+                        <input type="number" id="attraction-people" placeholder="人数" min="1" value="1" class="flex-1 bg-gray-50 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
+                        <span class="self-center text-xs text-gray-400">=</span>
+                        <input type="number" id="attraction-total" placeholder="总价" step="0.01" readonly class="flex-1 bg-gray-100 rounded-xl py-2 px-3 text-xs font-bold text-primary focus:outline-none">
+                    </div>
+                    <div class="flex gap-2 items-center">
+                        <input type="text" id="attraction-photo" placeholder="票务截图链接" class="flex-1 bg-gray-50 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
+                        <button type="button" class="shrink-0 bg-gray-100 text-gray-500 py-2 px-3 rounded-xl text-xs font-bold" onclick="document.getElementById('attraction-photo-file').click()"><i class="fas fa-camera"></i></button>
+                        <input type="file" id="attraction-photo-file" accept="image/*" class="hidden" onchange="handleAttractionPhoto(this)">
                     </div>
                 </div>
 
@@ -453,10 +628,44 @@
                             <button type="button" id="btn-cloud-join" class="bg-textMain text-white font-bold py-2 px-4 rounded-xl text-sm">加入</button>
                         </div>
                     </div>
+                    <!-- Flight API Key Management -->
+                    <div class="bg-white rounded-[22px] p-4 border border-gray-100 shadow-sm space-y-2">
+                        <button type="button" class="w-full flex justify-between items-center" onclick="document.getElementById('api-key-section').classList.toggle('hidden')">
+                            <div class="flex items-center gap-2">
+                                <i class="fas fa-plane text-xs text-gray-400"></i>
+                                <span class="text-xs font-extrabold text-textMain">航班查询 API</span>
+                            </div>
+                            <i class="fas fa-chevron-down text-[10px] text-gray-400"></i>
+                        </button>
+                        <div id="api-key-section" class="hidden space-y-2 pt-2 border-t border-gray-100">
+                            <p class="text-[10px] font-bold text-gray-400 leading-relaxed">填入 Aviationstack 或 AirLabs 的 API Key，查询航班时自动填充起降机场和时间。注册地址见下方。</p>
+                            <input type="text" id="api-key-aviationstack" placeholder="Aviationstack API Key" class="w-full bg-gray-50 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
+                            <input type="text" id="api-key-airlabs" placeholder="AirLabs API Key（可选）" class="w-full bg-gray-50 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
+                            <div class="flex gap-2">
+                                <button type="button" id="btn-api-save" class="flex-1 bg-primary text-white font-bold py-2 rounded-xl text-xs">保存</button>
+                                <button type="button" id="btn-api-clear" class="flex-1 bg-gray-100 text-gray-500 font-bold py-2 rounded-xl text-xs">清除</button>
+                            </div>
+                            <div class="flex gap-3 text-[9px] font-bold text-gray-400 justify-center">
+                                <a href="https://aviationstack.com/signup/free" target="_blank" class="hover:text-primary">Aviationstack 注册</a>
+                                <a href="https://airlabs.co/signup/free" target="_blank" class="hover:text-primary">AirLabs 注册</a>
+                            </div>
+                        </div>
+                    </div>
                     <button type="button" id="btn-cloud-logout" class="w-full bg-gray-100 text-gray-500 font-bold py-3 rounded-xl text-sm">退出登录</button>
                 </div>
                 <div id="cloud-message" class="text-[11px] font-bold text-gray-400 mt-3 leading-relaxed">配置 Supabase 后可登录并同步。</div>
             </div>
+        </div>
+    </div>
+
+    <!-- Flight Detail Popup -->
+    <div id="flight-detail-modal" class="modal fixed inset-0 z-50 bg-black/40 justify-center items-end sm:items-center pb-safe backdrop-blur-sm hidden">
+        <div class="bg-background w-full max-w-lg rounded-t-[32px] sm:rounded-[32px] p-6 max-h-[85vh] flex flex-col mx-auto">
+            <div class="flex justify-between items-center mb-4 shrink-0">
+                <h3 class="text-lg font-extrabold text-textMain">航班详情</h3>
+                <button class="w-8 h-8 bg-white rounded-full text-gray-500 shadow-sm" onclick="hideModal('flight-detail-modal')"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="overflow-y-auto flex-1 no-scrollbar space-y-3" id="fd-content"></div>
         </div>
     </div>
 
@@ -514,6 +723,137 @@
 
         function quoteJS(value) {
             return String(value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        }
+
+        // ---- Airport / Airline data (must be before normalizeBills) ----
+        const AIRLINE_NAMES = {
+            'CA': '中国国际航空', 'MU': '中国东方航空', 'CZ': '中国南方航空', 'HU': '海南航空',
+            '3U': '四川航空', 'ZH': '深圳航空', 'MF': '厦门航空', 'FM': '上海航空',
+            'HO': '吉祥航空', 'JD': '首都航空', 'GS': '天津航空', '8L': '祥鹏航空',
+            'PN': '西部航空', 'G5': '华夏航空', 'SC': '山东航空', 'KN': '中国联合航空',
+            'EU': '成都航空', 'NS': '河北航空', 'BK': '奥凯航空', 'DZ': '东海航空',
+            '9C': '春秋航空', 'AQ': '九元航空', 'RY': '江西航空', 'QW': '青岛航空',
+            'TV': '西藏航空', 'KY': '昆明航空', 'OQ': '重庆航空', 'GJ': '长龙航空',
+            'DR': '瑞丽航空', 'FU': '福州航空', 'Y8': '金鹏航空', 'UQ': '乌鲁木齐航空',
+            'JL': '日本航空', 'NH': '全日空', 'MM': '乐桃航空', 'GK': '捷星日本',
+            'TG': '泰国国际航空', 'FD': '泰国亚航', 'SL': '泰国狮航', 'VZ': '泰国越捷',
+            'KE': '大韩航空', 'OZ': '韩亚航空', '7C': '济州航空', 'LJ': '真航空',
+            'SQ': '新加坡航空', 'TR': '酷航', 'CX': '国泰航空', 'UO': '香港快运',
+            'BR': '长荣航空', 'CI': '中华航空', 'IT': '台湾虎航',
+            'UA': '美联航', 'DL': '达美航空', 'AA': '美国航空', 'BA': '英国航空',
+            'AF': '法国航空', 'LH': '汉莎航空', 'EK': '阿联酋航空', 'QR': '卡塔尔航空',
+        };
+        const AIRPORT_NAMES = {
+            'PEK': '北京首都','PKX': '北京大兴','PVG': '上海浦东','SHA': '上海虹桥',
+            'CAN': '广州白云','SZX': '深圳宝安','CTU': '成都天府','CKG': '重庆江北',
+            'HGH': '杭州萧山','WUH': '武汉天河','XIY': '西安咸阳','KMG': '昆明长水',
+            'NKG': '南京禄口','XMN': '厦门高崎','TAO': '青岛胶东','CSX': '长沙黄花',
+            'HAK': '海口美兰','SYX': '三亚凤凰','DLC': '大连周水子','TNA': '济南遥墙',
+            'NRT': '东京成田','HND': '东京羽田','KIX': '大阪关西','CTS': '札幌新千岁',
+            'FUK': '福冈','OKA': '冲绳那霸','NGO': '名古屋中部','KOJ': '鹿儿岛',
+            'BKK': '曼谷素万那普','DMK': '曼谷廊曼','HKT': '普吉','CNX': '清迈',
+            'ICN': '首尔仁川','GMP': '首尔金浦','PUS': '釜山金海','CJU': '济州',
+            'SIN': '新加坡樟宜','KUL': '吉隆坡','CGK': '雅加达','MNL': '马尼拉',
+            'TPE': '台北桃园','KHH': '高雄','HKG': '香港','MFM': '澳门',
+            'SGN': '胡志明市','HAN': '河内','RGN': '仰光','PNH': '金边',
+            'DEL': '新德里','BOM': '孟买','MAA': '金奈','BLR': '班加罗尔',
+            'DXB': '迪拜','AUH': '阿布扎比','DOH': '多哈','IST': '伊斯坦布尔',
+            'LHR': '伦敦希思罗','LGW': '伦敦盖特威克','CDG': '巴黎戴高乐',
+            'FRA': '法兰克福','AMS': '阿姆斯特丹','FCO': '罗马','MAD': '马德里',
+            'JFK': '纽约肯尼迪','LAX': '洛杉矶','SFO': '旧金山','ORD': '芝加哥',
+            'MIA': '迈阿密','BOS': '波士顿','SEA': '西雅图','YVR': '温哥华',
+            'SYD': '悉尼','MEL': '墨尔本','BNE': '布里斯班','AKL': '奥克兰',
+        };
+        const AIRPORT_EN_TO_IATA = {
+            'shenzhen': 'SZX','suvarnabhumi': 'BKK','don mueang': 'DMK','narita': 'NRT',
+            'haneda': 'HND','kansai': 'KIX','changi': 'SIN','chek lap kok': 'HKG',
+            'taoyuan': 'TPE','incheon': 'ICN','gimpo': 'GMP','heathrow': 'LHR',
+            'gatwick': 'LGW','charles de gaulle': 'CDG','schiphol': 'AMS',
+            'kennedy': 'JFK','lax': 'LAX',"o'hare": 'ORD','dulles': 'IAD',
+            'fiumicino': 'FCO','barajas': 'MAD','dubai': 'DXB','hamad': 'DOH',
+            'pudong': 'PVG','hongqiao': 'SHA','baiyun': 'CAN','daxing': 'PKX',
+            'shuangliu': 'CTU','jiangbei': 'CKG','xiaoshan': 'HGH','tianhe': 'WUH',
+            'xianyang': 'XIY','changshui': 'KMG','gaoqi': 'XMN','meilan': 'HAK',
+            'phoenix': 'SYX','zhoushuizi': 'DLC','yaoqiang': 'TNA','lishe': 'NGB',
+            'centrair': 'NGO','fukuoka': 'FUK','naha': 'OKA','new chitose': 'CTS',
+            'phuket': 'HKT','chiang mai': 'CNX','gimhae': 'PUS','jeju': 'CJU',
+            'tan son nhat': 'SGN','noi bai': 'HAN','kingsford': 'SYD','tullamarine': 'MEL',
+        };
+        const AIRPORT_COORDS = {
+            'PEK':[40.08,116.58],'PKX':[39.51,116.41],'PVG':[31.14,121.80],'SHA':[31.19,121.33],
+            'CAN':[23.39,113.30],'SZX':[22.64,113.81],'CTU':[30.57,103.94],'CKG':[29.72,106.64],
+            'HGH':[30.23,120.43],'WUH':[30.78,114.20],'XIY':[34.45,108.75],'KMG':[25.10,102.93],
+            'NKG':[31.74,118.86],'XMN':[24.54,118.12],'TAO':[36.26,120.38],'CSX':[28.18,113.22],
+            'HAK':[19.93,110.45],'SYX':[18.30,109.41],'DLC':[38.96,121.53],'TNA':[36.85,117.21],
+            'NRT':[35.76,140.38],'HND':[35.55,139.78],'KIX':[34.43,135.24],'CTS':[42.78,141.69],
+            'FUK':[33.59,130.45],'OKA':[26.19,127.65],'NGO':[34.86,136.81],'KOJ':[31.80,130.72],
+            'BKK':[13.68,100.75],'DMK':[13.91,100.60],'HKT':[8.11,98.31],'CNX':[18.77,98.96],
+            'ICN':[37.46,126.44],'GMP':[37.56,126.79],'PUS':[35.18,128.94],'CJU':[33.51,126.49],
+            'SIN':[1.36,103.99],'KUL':[2.74,101.70],'CGK':[-6.12,106.65],'MNL':[14.51,121.01],
+            'TPE':[25.08,121.23],'HKG':[22.31,113.91],'MFM':[22.15,113.59],
+            'SGN':[10.82,106.65],'HAN':[21.22,105.80],'DEL':[28.56,77.10],'BOM':[19.09,72.87],
+            'DXB':[25.25,55.36],'DOH':[25.27,51.61],'IST':[41.27,28.75],
+            'LHR':[51.47,-0.46],'CDG':[49.01,2.55],'FRA':[50.03,8.57],'AMS':[52.31,4.76],'FCO':[41.80,12.25],'MAD':[40.47,-3.56],
+            'JFK':[40.64,-73.78],'LAX':[33.94,-118.41],'SFO':[37.62,-122.38],'ORD':[41.98,-87.90],'SEA':[47.45,-122.31],
+            'SYD':[-33.94,151.17],'MEL':[-37.67,144.84],'AKL':[-37.01,174.79],
+        };
+
+        function extractFlightNo(text) {
+            const match = String(text || '').toUpperCase().match(/\b([A-Z0-9]{2})\s?(\d{2,5})\b/);
+            return match ? match[1] + match[2] : '';
+        }
+        function getAirlineFromCode(flightNo) {
+            if (!flightNo || flightNo.length < 3) return '';
+            const code2 = flightNo.slice(0, 2);
+            if (AIRLINE_NAMES[code2]) return AIRLINE_NAMES[code2];
+            return AIRLINE_NAMES[flightNo.slice(0, 2)] || '';
+        }
+        function normalizeAirportIATA(value) {
+            if (!value) return '';
+            const key = String(value).toUpperCase().trim();
+            if (/^[A-Z]{3}$/.test(key) && AIRPORT_NAMES[key]) return key;
+            const lower = String(value).toLowerCase();
+            for (const [en, iata] of Object.entries(AIRPORT_EN_TO_IATA)) {
+                if (lower.includes(en)) return iata;
+            }
+            const match = key.match(/\b([A-Z]{3})\b/);
+            if (match && AIRPORT_NAMES[match[1]]) return match[1];
+            return '';
+        }
+        function airportDisplay(codeOrName) {
+            if (!codeOrName) return '';
+            const iata = normalizeAirportIATA(codeOrName);
+            if (iata && AIRPORT_NAMES[iata]) {
+                return `${AIRPORT_NAMES[iata]} <span class="text-[9px] text-gray-400 ml-1">${escapeHTML(iata)}</span>`;
+            }
+            const short = String(codeOrName).length > 20 ? String(codeOrName).slice(0, 18) + '..' : String(codeOrName);
+            return `<span class="text-gray-500">${escapeHTML(short)}</span>`;
+        }
+        function getAirportCoord(codeOrName) {
+            const iata = normalizeAirportIATA(codeOrName);
+            return iata ? AIRPORT_COORDS[iata] : null;
+        }
+
+        function renderFlightMap(el, fromCode, toCode) {
+            if (!el || el._mapRendered) return;
+            if (typeof L === 'undefined') return;
+            const fromCoord = getAirportCoord(fromCode);
+            const toCoord = getAirportCoord(toCode);
+            if (!fromCoord || !toCoord) return;
+            el._mapRendered = true;
+            try {
+                const map = L.map(el, { zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false, touchZoom: false, doubleClickZoom: false })
+                    .setView([(fromCoord[0]+toCoord[0])/2, (fromCoord[1]+toCoord[1])/2], 4);
+                L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 12 }).addTo(map);
+                const midLat = (fromCoord[0]+toCoord[0])/2, midLng = (fromCoord[1]+toCoord[1])/2;
+                const curve = Math.min(8, Math.abs(toCoord[1]-fromCoord[1])*0.15);
+                L.polyline([[fromCoord[0],fromCoord[1]],[midLat+curve,midLng],[toCoord[0],toCoord[1]]], { color: '#685df5', weight: 2.5, opacity: 0.8 }).addTo(map);
+                const fromIcon = L.divIcon({ className: '', html: '<div style="background:#685df5;color:#fff;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:bold">起</div>', iconSize:[22,22], iconAnchor:[11,11] });
+                const toIcon = L.divIcon({ className: '', html: '<div style="background:#ff9500;color:#fff;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:bold">降</div>', iconSize:[22,22], iconAnchor:[11,11] });
+                L.marker(fromCoord, { icon: fromIcon }).addTo(map);
+                L.marker(toCoord, { icon: toIcon }).addTo(map);
+                setTimeout(() => map.invalidateSize(), 400);
+            } catch(e) { el._mapRendered = false; }
         }
 
         function normalizeMembers(list) {
@@ -631,6 +971,11 @@
                 const currency = b.currency || tripData.baseCurrency || BASE_CURRENCY;
                 const fxRate = Number(b.fxRate || (currency === tripData.baseCurrency ? 1 : tripData.rate || 1));
                 const amount = Number(b.amount || 0);
+                const meta = b.meta || {};
+                // Normalize airport codes for display (existing data migration)
+                if (meta.from) meta.from = normalizeAirportIATA(meta.from) || meta.from;
+                if (meta.to) meta.to = normalizeAirportIATA(meta.to) || meta.to;
+                if (meta.transitAirport) meta.transitAirport = normalizeAirportIATA(meta.transitAirport) || meta.transitAirport;
                 return {
                     ...b,
                     id: b.id || `bill_${Date.now()}_${Math.random().toString(16).slice(2)}`,
@@ -640,9 +985,14 @@
                     baseAmount: Number(b.baseAmount ?? amount * fxRate),
                     timestamp: b.timestamp || new Date().toISOString(),
                     participants: Array.isArray(b.participants) ? b.participants : [],
-                    meta: b.meta || {}
+                    meta
                 };
             });
+            // Only persist if we actually changed something
+            const oldBills = readJSON('travelBills', []);
+            if (JSON.stringify(bills) !== JSON.stringify(oldBills)) {
+                saveData();
+            }
         }
 
         function removeMockMembers() {
@@ -750,7 +1100,9 @@
             if (!cloudSession) return false;
             const accountName = cloudDisplayName();
             if (!accountName) return false;
-            const nextMembers = normalizeMembers([accountName, ...members]);
+            // Replace placeholder "我" with actual account name
+            let base = members.filter(m => m !== '我');
+            const nextMembers = normalizeMembers([accountName, ...base]);
             const changed = nextMembers.length !== members.length || nextMembers.some((m, index) => m !== members[index]);
             if (changed) {
                 members = nextMembers;
@@ -806,7 +1158,14 @@
             setCloudAuthStatus(cloudTripId ? '已同步' : '已登录', 'on');
             if (userText) userText.textContent = `${cloudDisplayName()} · ${cloudSession.user.email || cloudSession.user.id}`;
             if (inviteEl) inviteEl.textContent = localStorage.getItem('travel2InviteCode') || '-';
-            setCloudMessage(cloudTripId ? '云端旅程已连接，新增和删除账单会自动同步。' : '还没有云端旅程，可以创建/上传或输入邀请码加入。', 'muted');
+
+            // Helpful message about cross-domain data
+            let msg = cloudTripId ? '云端旅程已连接，新增和删除账单会自动同步。' : '还没有云端旅程，可以创建/上传或输入邀请码加入。';
+            const isGitHubPages = location.hostname.includes('github.io');
+            if (isGitHubPages) {
+                msg += ' 提示：GitHub Pages 与本地 127.0.0.1 的浏览器数据不互通，登录同个 Supabase 账号并拉取云端即可同步。';
+            }
+            setCloudMessage(msg, 'muted');
         }
 
         function cloudReady() {
@@ -838,20 +1197,44 @@
             if (cloudSession) ensureAccountInMembers({ persist: true, markDirty: false });
             renderCloudState();
 
-            cloudClient.auth.onAuthStateChange(async (_event, session) => {
+            cloudClient.auth.onAuthStateChange(async (event, session) => {
                 cloudSession = session;
                 if (cloudSession) ensureAccountInMembers({ persist: true, markDirty: false });
                 renderCloudState();
                 if (cloudSession && cloudTripId) {
                     subscribeCloudTrip();
                     await pullCloudTrip({ silent: true });
+                } else if (cloudSession && !cloudTripId && event === 'SIGNED_IN') {
+                    // Auto-discover existing cloud trips after login
+                    await autoDiscoverCloudTrip();
                 }
             });
 
             if (cloudSession && cloudTripId) {
                 subscribeCloudTrip();
                 await pullCloudTrip({ silent: true });
+            } else if (cloudSession && !cloudTripId) {
+                // Initial load: auto-discover existing cloud trips
+                await autoDiscoverCloudTrip();
             }
+        }
+
+        // Auto-discover cloud trip for the current user (for new devices/browsers)
+        async function autoDiscoverCloudTrip() {
+            if (!cloudClient || !cloudSession) return;
+            try {
+                // Check if user is a member of any trip
+                const { data: memberships, error } = await cloudClient.from('trip_members')
+                    .select('trip_id').eq('user_id', cloudSession.user.id).limit(1);
+                if (error || !memberships || memberships.length === 0) return;
+                cloudTripId = memberships[0].trip_id;
+                localStorage.setItem('travel2CloudTripId', cloudTripId);
+                await loadCloudInvite();
+                subscribeCloudTrip();
+                await pullCloudTrip({ silent: true });
+                renderCloudState();
+                setCloudMessage('已自动连接云端旅程，数据已同步。', 'success');
+            } catch(e) { /* silent */ }
         }
 
         function tripPayload() {
@@ -1251,6 +1634,68 @@
             modal.classList.add('hidden');
         }
 
+        // Open flight detail popup
+        window.openFlightDetail = function(billId) {
+            const bill = bills.find(b => b.id === billId);
+            if (!bill || bill.itineraryType !== 'flight') return;
+            const meta = bill.meta || {};
+            const returnFlight = normalizeReturnFlightPayload(meta.returnFlight);
+            const cabinLabel = { economy: '经济舱', business: '商务舱', first: '头等舱' };
+            const currency = bill.currency || tripData.baseCurrency;
+            const amountStr = `${currencySymbol(currency)}${formatMoney(bill.amount, currency)}`;
+
+            const rows = [];
+            const add = (label, value, full) => { if (value) rows.push({ label, value, full: !!full }); };
+
+            const fromDisplay = airportDisplay(normalizeAirportIATA(meta.from) || meta.from || '--');
+            const toDisplay = airportDisplay(normalizeAirportIATA(meta.to) || meta.to || '--');
+            add('航线', `${fromDisplay} <i class="fas fa-long-arrow-alt-right text-gray-300 mx-1"></i> ${toDisplay}`, true);
+            if (meta.flightNo) add('航班号', escapeHTML(meta.flightNo));
+            if (meta.airline) add('航司', escapeHTML(meta.airline));
+            add('舱位', cabinLabel[meta.cabin] || meta.cabin || '经济舱');
+            add('总票价', amountStr);
+            const depTime = meta.depScheduled || bill.itineraryStart || '';
+            const arrTime = meta.arrScheduled || bill.itineraryEnd || '';
+            if (depTime) add('出发时间', `${flightTimeLabel(depTime)}${meta.fromTz ? ' (UTC' + meta.fromTz + ')' : ''}`);
+            if (arrTime) add('到达时间', `${flightTimeLabel(arrTime)}${meta.toTz ? ' (UTC' + meta.toTz + ')' : ''}`);
+            const dur = flightDurationLabel(depTime, arrTime, meta.duration);
+            if (dur && dur !== '--') add('飞行时长', dur);
+            if (meta.baggageFree) add('行李额度', escapeHTML(meta.baggageFree));
+            if (meta.baggageExcessFee) add('超重费', escapeHTML(meta.baggageExcessFee));
+            if (meta.transitAirport) add('中转', `${escapeHTML(meta.transitAirport)}${meta.transitDuration ? ' · ' + escapeHTML(meta.transitDuration) : ''}`);
+            const gate = [meta.depTerminal ? meta.depTerminal + '航站楼' : '', meta.depGate ? meta.depGate + '口' : ''].filter(Boolean).join(' ');
+            if (gate) add('登机口', escapeHTML(gate));
+            if (meta.aircraftType) add('机型', escapeHTML(meta.aircraftType));
+            if (meta.seatNo) add('座位号', escapeHTML(meta.seatNo));
+            if (meta.platform) add('购票平台', escapeHTML(meta.platform));
+            if (meta.ticketNo) add('客票号', escapeHTML(meta.ticketNo));
+            if (meta.orderNo) add('订单号', escapeHTML(meta.orderNo));
+            if (meta.status) add('状态', escapeHTML(meta.status) + (meta.depDelay ? ' · 延误' + Math.round(meta.depDelay) + '分' : ''));
+            if (meta.screenshot) add('截图', `<a href="${escapeHTML(meta.screenshot)}" target="_blank" class="text-primary underline">查看</a>`);
+
+            let returnHTML = '';
+            if (returnFlight) {
+                const rm = returnFlight.meta || {};
+                const rFrom = airportDisplay(normalizeAirportIATA(rm.from) || rm.from || '--');
+                const rTo = airportDisplay(normalizeAirportIATA(rm.to) || rm.to || '--');
+                const rDep = rm.depScheduled || returnFlight.itineraryStart || '';
+                const rArr = rm.arrScheduled || returnFlight.itineraryEnd || '';
+                returnHTML = `<div class="mt-4 pt-4 border-t-2 border-dashed border-gray-200"><div class="text-xs font-extrabold text-orange-500 uppercase tracking-wide mb-2">返程</div><div class="text-sm font-bold text-textMain">${escapeHTML(returnFlight.desc || rm.flightNo || '返程航班')}</div><div class="text-xs text-gray-500 mt-1">${rFrom} <i class="fas fa-arrow-right text-gray-300 mx-1"></i> ${rTo}</div><div class="text-xs text-gray-400 mt-0.5">${flightTimeLabel(rDep)} → ${flightTimeLabel(rArr)} · ${flightDurationLabel(rDep, rArr)}</div></div>`;
+            }
+
+            let mapHTML = '';
+            const mapFrom = normalizeAirportIATA(meta.from);
+            const mapTo = normalizeAirportIATA(meta.to);
+            if (mapFrom && mapTo && getAirportCoord(mapFrom) && getAirportCoord(mapTo)) {
+                mapHTML = `<div class="flight-map-container h-48 w-full rounded-xl bg-gray-100 relative overflow-hidden" id="fd-map" data-from="${escapeHTML(mapFrom)}" data-to="${escapeHTML(mapTo)}" style="z-index:1"></div>`;
+            }
+
+            document.getElementById('fd-content').innerHTML = `<div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 space-y-2">${rows.map(r => r.full ? `<div class="py-1.5 border-b border-gray-50 last:border-0"><div class="text-xs font-bold text-gray-400 mb-1">${r.label}</div><div class="text-sm font-bold text-textMain">${r.value}</div></div>` : `<div class="flex justify-between items-center py-1.5 border-b border-gray-50 last:border-0"><span class="text-xs font-bold text-gray-400">${r.label}</span><span class="text-sm font-bold text-textMain text-right max-w-[60%]">${r.value}</span></div>`).join('')}${returnHTML}</div>${mapHTML}`;
+
+            showModal('flight-detail-modal');
+            if (mapFrom && mapTo) setTimeout(() => { const mel = document.getElementById('fd-map'); if (mel) renderFlightMap(mel, mapFrom, mapTo); }, 200);
+        };
+
         // --- ALERT UTILS ---
         function resetAlertActions() {
             const confirmBtn = document.getElementById('btn-alert-confirm');
@@ -1352,47 +1797,368 @@
         function recordActions(id) {
             const safeId = quoteJS(id);
             return `
-                <div class="flex justify-end gap-1 mt-3 pt-3 border-t border-gray-50">
+                <div class="flex justify-end gap-1 mt-3 pt-3 border-t border-gray-50" onclick="event.stopPropagation()">
                     <button type="button" class="w-7 h-7 rounded-full bg-gray-50 text-gray-400 hover:text-primary" onclick="openEditBill('${safeId}')" aria-label="编辑记录"><i class="fas fa-pen text-[10px]"></i></button>
                     <button type="button" class="w-7 h-7 rounded-full bg-gray-50 text-gray-400 hover:text-red-500" onclick="deleteBill('${safeId}')" aria-label="删除记录"><i class="fas fa-trash-alt text-[10px]"></i></button>
                 </div>
             `;
         }
 
+        // Toggle timeline card detail expansion
+        window.toggleTimelineDetail = function(card) {
+            const detail = card.querySelector('.timeline-detail');
+            const arrow = card.querySelector('.timeline-expand-arrow');
+            if (!detail) return;
+            const isHidden = detail.classList.contains('hidden');
+            detail.classList.toggle('hidden');
+            if (arrow) {
+                arrow.innerHTML = isHidden ? '<i class="fas fa-chevron-up"></i>' : '<i class="fas fa-chevron-down"></i>';
+                arrow.classList.toggle('text-primary', isHidden);
+            }
+            // Render flight map when expanding
+            if (isHidden) {
+                const mapContainer = card.querySelector('.flight-map-container');
+                if (mapContainer && !mapContainer._mapRendered) {
+                    const from = mapContainer.dataset.from;
+                    const to = mapContainer.dataset.to;
+                    if (from && to) {
+                        renderFlightMap(mapContainer, from, to);
+                    }
+                }
+            }
+        };
+
+        function timelineDetailHTML(item) {
+            const meta = item.meta || {};
+            if (item.itineraryType === 'flight') {
+                const cabinLabel = { economy: '经济舱', business: '商务舱', first: '头等舱' };
+                const rows = [];
+                if (meta.cabin) rows.push(`<span class="text-gray-400">舱位</span> <span class="font-bold">${escapeHTML(cabinLabel[meta.cabin] || meta.cabin)}</span>`);
+                if (meta.from || meta.to) rows.push(`<span class="text-gray-400">航线</span> <span class="font-bold">${airportDisplay(meta.from || '?')} <i class="fas fa-arrow-right text-[9px] text-gray-300 mx-1"></i> ${airportDisplay(meta.to || '?')}</span>`);
+                if (meta.fromTz || meta.toTz) rows.push(`<span class="text-gray-400">时区</span> <span class="font-bold">UTC${escapeHTML(meta.fromTz || '+8')} → UTC${escapeHTML(meta.toTz || '+9')}</span>`);
+                if (meta.baggageFree) rows.push(`<span class="text-gray-400">行李</span> <span class="font-bold">${escapeHTML(meta.baggageFree)}</span>`);
+                if (meta.baggageExcessFee) rows.push(`<span class="text-gray-400">超重费</span> <span class="font-bold">${escapeHTML(meta.baggageExcessFee)}</span>`);
+                if (meta.transitAirport) rows.push(`<span class="text-gray-400">中转</span> <span class="font-bold">${escapeHTML(meta.transitAirport)}${meta.transitDuration ? ' · ' + escapeHTML(meta.transitDuration) : ''}</span>`);
+                if (meta.orderNo) rows.push(`<span class="text-gray-400">订单号</span> <span class="font-bold">${escapeHTML(meta.orderNo)}</span>`);
+                if (meta.airline) rows.push(`<span class="text-gray-400">航司</span> <span class="font-bold">${escapeHTML(meta.airline)}</span>`);
+                if (meta.status) rows.push(`<span class="text-gray-400">状态</span> <span class="font-bold">${escapeHTML(meta.status)}${meta.depDelay != null ? ' · 延误' + Math.round(meta.depDelay) + '分' : ''}</span>`);
+                const gate = [meta.depTerminal ? meta.depTerminal + '航站楼' : '', meta.depGate ? meta.depGate + '口' : ''].filter(Boolean).join(' ');
+                if (gate) rows.push(`<span class="text-gray-400">登机口</span> <span class="font-bold">${escapeHTML(gate)}</span>`);
+                if (meta.aircraftType) rows.push(`<span class="text-gray-400">机型</span> <span class="font-bold">${escapeHTML(meta.aircraftType)}</span>`);
+                if (meta.screenshot) rows.push(`<span class="text-gray-400">截图</span> <a href="${escapeHTML(meta.screenshot)}" target="_blank" class="font-bold text-primary underline">查看</a>`);
+                if (!rows.length) return '';
+                const fromIATA = normalizeAirportIATA(meta.from) || meta.from || '';
+                const toIATA = normalizeAirportIATA(meta.to) || meta.to || '';
+                const hasCoords = getAirportCoord(fromIATA) && getAirportCoord(toIATA);
+                const mapHTML = hasCoords
+                    ? `<div class="flight-map-container h-44 w-full rounded-xl mt-2 bg-gray-100 relative overflow-hidden" data-from="${escapeHTML(fromIATA)}" data-to="${escapeHTML(toIATA)}" style="z-index:1"></div>`
+                    : '';
+                return `<div class="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">${rows.map(r => `<div class="flex justify-between bg-gray-50 rounded-lg px-2 py-1.5">${r}</div>`).join('')}</div>${mapHTML}`;
+            } else if (item.itineraryType === 'hotel') {
+                const rows = [];
+                if (meta.address) rows.push(`<span class="text-gray-400">地址</span> <span class="font-bold">${escapeHTML(meta.address)}</span>`);
+                if (meta.nights > 0) rows.push(`<span class="text-gray-400">晚数</span> <span class="font-bold">${meta.nights}晚</span>`);
+                if (meta.pricePerNight) rows.push(`<span class="text-gray-400">每晚</span> <span class="font-bold">¥${escapeHTML(meta.pricePerNight)}</span>`);
+                if (meta.platform) rows.push(`<span class="text-gray-400">平台</span> <span class="font-bold">${escapeHTML(meta.platform)}</span>`);
+                if (meta.confirmationNo) rows.push(`<span class="text-gray-400">确认号</span> <span class="font-bold">${escapeHTML(meta.confirmationNo)}</span>`);
+                if (meta.breakfast) rows.push(`<span class="text-gray-400">早餐</span> <span class="font-bold text-green-600">含早餐</span>`);
+                if (!rows.length) return '';
+                return `<div class="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">${rows.map(r => `<div class="flex justify-between bg-gray-50 rounded-lg px-2 py-1.5">${r}</div>`).join('')}</div>`;
+            }
+            return '';
+        }
+
         function flightMetaLine(item) {
             const meta = item.meta || {};
-            const route = [meta.from, meta.to].filter(Boolean).map(escapeHTML).join(' → ');
             const bits = [];
+            // Route with Chinese names
+            if (meta.from || meta.to) {
+                const routeHTML = airportDisplay(meta.from) + ' <i class="fas fa-long-arrow-alt-right text-[9px] text-gray-300 mx-0.5"></i> ' + airportDisplay(meta.to);
+                bits.push(`<span class="whitespace-nowrap">${routeHTML}</span>`);
+            }
             if (meta.flightNo) bits.push(escapeHTML(meta.flightNo));
             if (meta.airline) bits.push(escapeHTML(meta.airline));
-            if (route) bits.push(route);
-
+            // Cabin class
+            const cabinLabel = { economy: '经济舱', business: '商务舱', first: '头等舱' };
+            if (meta.cabin && meta.cabin !== 'economy') bits.push(cabinLabel[meta.cabin] || meta.cabin);
             // Status + delays
             const statusParts = [];
             if (meta.status) statusParts.push(escapeHTML(meta.status));
             if (meta.depDelay != null) statusParts.push(`延误 ${Math.round(meta.depDelay)}分`);
             if (statusParts.length) bits.push(statusParts.join(' · '));
-
-            // Terminal / Gate info
-            const gateInfo = [
-                meta.depTerminal ? `${meta.depTerminal}航站楼` : '',
-                meta.depGate ? `${meta.depGate}口` : ''
-            ].filter(Boolean).join(' ');
+            // Gate info
+            const gateInfo = [meta.depTerminal ? `${meta.depTerminal}航站楼` : '', meta.depGate ? `${meta.depGate}口` : ''].filter(Boolean).join(' ');
             if (gateInfo) bits.push(gateInfo);
-
-            // Aircraft
             if (meta.aircraftType) bits.push(escapeHTML(meta.aircraftType));
 
             if (!bits.length) return '';
 
-            const mainLine = bits.slice(0, 3).join(' · ');
-            const subLine = bits.slice(3).join(' · ');
+            const mainLine = bits.slice(0, 4).join(' · ');
+            const subLine = bits.slice(4).join(' · ');
 
             let html = `<div class="text-[10px] font-bold text-gray-400 mt-2"><i class="fas fa-plane-departure mr-1"></i>${mainLine}</div>`;
-            if (subLine) {
-                html += `<div class="text-[9px] font-bold text-gray-300 mt-0.5 ml-4">${subLine}</div>`;
-            }
+            if (subLine) html += `<div class="text-[9px] font-bold text-gray-300 mt-0.5 ml-4">${subLine}</div>`;
+            // Extra flight details row
+            const extra = [];
+            if (meta.baggageFree) extra.push(`行李: ${escapeHTML(meta.baggageFree)}`);
+            if (meta.transitAirport) extra.push(`中转 ${escapeHTML(meta.transitAirport)}${meta.transitDuration ? ' ' + escapeHTML(meta.transitDuration) : ''}`);
+            if (meta.orderNo) extra.push(`订单: ${escapeHTML(meta.orderNo)}`);
+            if (extra.length) html += `<div class="text-[9px] font-bold text-gray-300 mt-0.5 ml-4">${extra.join(' · ')}</div>`;
             return html;
+        }
+
+        function flightDateLabel(value) {
+            const date = safeDate(value);
+            return date.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
+        }
+
+        function flightTimeLabel(value) {
+            const date = safeDate(value);
+            return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function flightDurationLabel(startValue, endValue, fallback = '') {
+            if (fallback) return fallback;
+            const start = safeDate(startValue);
+            const end = safeDate(endValue || startValue);
+            const minutes = Math.max(0, Math.round((end - start) / 60000));
+            if (!minutes) return '--';
+            const hours = Math.floor(minutes / 60);
+            const mins = minutes % 60;
+            if (hours && mins) return `${hours}小时${mins}分`;
+            if (hours) return `${hours}小时`;
+            return `${mins}分`;
+        }
+
+        function terminalLabel(value) {
+            const text = String(value || '').trim();
+            if (!text) return '';
+            if (/^t\d+/i.test(text)) return text.toUpperCase();
+            if (/terminal/i.test(text)) return text.replace(/terminal\s*/i, 'T').toUpperCase();
+            return `T${text}`;
+        }
+
+        function airportTitle(name, terminal, fallback) {
+            // Prefer Chinese name from IATA code
+            const iata = normalizeAirportIATA(fallback || name);
+            const cnName = iata && AIRPORT_NAMES[iata] ? AIRPORT_NAMES[iata] : '';
+            const main = cnName || String(name || fallback || '').trim() || '--';
+            const term = terminalLabel(terminal);
+            return term ? `${main} ${term}` : main;
+        }
+
+        function ticketInfoCell(label, value, options = {}) {
+            if (value === undefined || value === null || String(value).trim() === '') return '';
+            const text = String(value).trim();
+            const valueClass = options.accent ? 'text-textMain font-extrabold' : 'text-textMain';
+            return `
+                <div class="min-w-0 bg-gray-50 rounded-xl px-3 py-2">
+                    <div class="text-[10px] font-extrabold text-gray-400 mb-1">${escapeHTML(label)}</div>
+                    <div class="text-sm font-bold ${valueClass} leading-snug break-words">${escapeHTML(text)}</div>
+                </div>
+            `;
+        }
+
+        function flightLegData(item, leg = {}) {
+            const meta = leg.meta || item.meta || {};
+            const desc = leg.desc || item.desc || '';
+            const flightNo = meta.flightNo || extractFlightNo(desc) || desc || '航班';
+            const airline = meta.airline || getAirlineFromCode(flightNo) || '';
+            const fromCode = meta.from || '--';
+            const toCode = meta.to || '--';
+            const fromTitle = airportTitle(meta.fromName, meta.depTerminal, fromCode === '--' ? '出发机场' : fromCode);
+            const toTitle = airportTitle(meta.toName, meta.arrTerminal, toCode === '--' ? '到达机场' : toCode);
+            const startValue = leg.itineraryStart || meta.depScheduled || item.itineraryStart || item.timestamp;
+            const endValue = leg.itineraryEnd || meta.arrScheduled || item.itineraryEnd || '';
+            return { meta, desc, flightNo, airline, fromCode, toCode, fromTitle, toTitle, startValue, endValue };
+        }
+
+        function flightLegHTML(item, label, leg = {}) {
+            const data = flightLegData(item, leg);
+            const arrivalTime = data.endValue ? flightTimeLabel(data.endValue) : '--:--';
+            return `
+                <div class="py-3">
+                    <div class="flex items-center justify-between gap-3 mb-3">
+                        <div class="min-w-0 flex items-center gap-2">
+                            <span class="text-[10px] font-extrabold text-primary bg-primary/10 px-2 py-1 rounded-lg">${escapeHTML(label)}</span>
+                            <span class="font-extrabold text-textMain truncate">${escapeHTML(data.flightNo)}</span>
+                            ${data.airline ? `<span class="text-xs font-bold text-gray-400 truncate">${escapeHTML(data.airline)}</span>` : ''}
+                        </div>
+                        <div class="text-[11px] font-extrabold text-gray-400 shrink-0">${escapeHTML(flightDateLabel(data.startValue))}</div>
+                    </div>
+
+                    <div class="grid grid-cols-[1fr_auto_1fr] gap-3 items-center">
+                        <div class="min-w-0">
+                            <div class="text-lg font-extrabold leading-tight text-textMain break-words">${escapeHTML(data.fromTitle)}</div>
+                            <div class="text-xs font-bold text-gray-500 mt-2">
+                                <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary text-white mr-1"><i class="fas fa-arrow-up text-[10px]"></i></span>
+                                ${escapeHTML(data.fromCode)} <span class="text-textMain">${escapeHTML(flightTimeLabel(data.startValue))}</span>
+                            </div>
+                        </div>
+                        <div class="flex flex-col items-center justify-center gap-1">
+                            <i class="fas fa-plane text-primary text-2xl"></i>
+                            <div class="text-[11px] font-bold text-gray-400 whitespace-nowrap"><i class="far fa-clock mr-1"></i>${escapeHTML(flightDurationLabel(data.startValue, data.endValue, data.meta.duration))}</div>
+                        </div>
+                        <div class="min-w-0 text-right">
+                            <div class="text-lg font-extrabold leading-tight text-textMain break-words">${escapeHTML(data.toTitle)}</div>
+                            <div class="text-xs font-bold text-gray-500 mt-2">
+                                <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary text-white mr-1"><i class="fas fa-arrow-down text-[10px]"></i></span>
+                                ${escapeHTML(data.toCode)} <span class="text-textMain">${escapeHTML(arrivalTime)}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function normalizeReturnFlightPayload(value) {
+            if (!value) return null;
+            if (value.meta || value.itineraryStart || value.desc) return value;
+            return null;
+        }
+
+        function isLegacyReturnFlight(record) {
+            return record && record.type === 'itinerary' && record.itineraryType === 'flight' && record.meta && record.meta.isReturn;
+        }
+
+        function legacyOutboundForReturn(record) {
+            if (!isLegacyReturnFlight(record)) return null;
+            const returnId = Number(record.id);
+            if (!Number.isFinite(returnId)) return null;
+            return bills.find(candidate => (
+                candidate.type === 'itinerary' &&
+                candidate.itineraryType === 'flight' &&
+                !isLegacyReturnFlight(candidate) &&
+                Number(candidate.id) === returnId - 1
+            )) || null;
+        }
+
+        function shouldSkipLegacyReturnRecord(record) {
+            return isLegacyReturnFlight(record) && !!legacyOutboundForReturn(record);
+        }
+
+        function findLegacyReturnRecord(outbound) {
+            if (!outbound || outbound.type !== 'itinerary' || outbound.itineraryType !== 'flight' || isLegacyReturnFlight(outbound)) return null;
+            const outboundId = Number(outbound.id);
+            if (!Number.isFinite(outboundId)) return null;
+            return bills.find(b => isLegacyReturnFlight(b) && Number(b.id) === outboundId + 1) || null;
+        }
+
+        function legacyReturnToPayload(record) {
+            if (!record) return null;
+            return {
+                id: record.id,
+                desc: record.desc,
+                itineraryStart: record.itineraryStart,
+                itineraryEnd: record.itineraryEnd,
+                meta: record.meta || {}
+            };
+        }
+
+        function mergedFlightForDisplay(outbound, returnRecord) {
+            return {
+                ...outbound,
+                meta: {
+                    ...(outbound.meta || {}),
+                    returnFlight: legacyReturnToPayload(returnRecord)
+                }
+            };
+        }
+
+        function flightTicketCardHTML(item, catInfo, amountText) {
+            const meta = item.meta || {};
+            const outbound = flightLegData(item);
+            const returnFlight = normalizeReturnFlightPayload(meta.returnFlight);
+            const sharedMeta = meta;
+            const returnMeta = returnFlight ? (returnFlight.meta || {}) : {};
+            const dateText = returnFlight
+                ? `${flightDateLabel(outbound.startValue)} - ${flightDateLabel(returnFlight.itineraryStart || returnFlight.timestamp || outbound.startValue)}`
+                : flightDateLabel(outbound.startValue);
+            const cabinLabel = { economy: '经济舱', business: '商务舱', first: '头等舱' };
+            const platform = sharedMeta.platform || sharedMeta.bookingPlatform || returnMeta.platform || '';
+            const ticketNo = sharedMeta.ticketNo || sharedMeta.passengerNo || '';
+            const seatNo = sharedMeta.seatNo || sharedMeta.seat || '';
+            const aircraft = sharedMeta.aircraftType || sharedMeta.aircraftReg || '';
+            const baggage = [sharedMeta.baggageFree, sharedMeta.baggageExcessFee ? `超重 ${sharedMeta.baggageExcessFee}` : ''].filter(Boolean).join(' / ');
+            const orderNo = sharedMeta.orderNo && sharedMeta.orderNo !== ticketNo ? sharedMeta.orderNo : '';
+            const gate = [sharedMeta.depGate ? `${sharedMeta.depGate}口` : '', sharedMeta.arrGate ? `到达${sharedMeta.arrGate}口` : ''].filter(Boolean).join(' / ');
+            const transit = sharedMeta.transitAirport ? `${sharedMeta.transitAirport}${sharedMeta.transitDuration ? ' · ' + sharedMeta.transitDuration : ''}` : '';
+            const detailCells = [
+                ticketInfoCell('客舱等级', cabinLabel[sharedMeta.cabin] || sharedMeta.cabin || '经济舱'),
+                ticketInfoCell('座位号', seatNo),
+                ticketInfoCell('总票价', amountText),
+                ticketInfoCell('购票平台', platform),
+                ticketInfoCell('客票号', ticketNo),
+                ticketInfoCell('机型', aircraft),
+                ticketInfoCell('行李', baggage),
+                ticketInfoCell('订单号', orderNo),
+                ticketInfoCell('登机口', gate),
+                ticketInfoCell('中转', transit),
+                ticketInfoCell('状态', sharedMeta.status || '')
+            ].filter(Boolean).join('');
+
+            return `
+                <div class="relative z-10 w-8 h-8 rounded-full ${catInfo.color} flex items-center justify-center border-4 border-background shrink-0 mt-2">
+                    <i class="fas ${catInfo.icon} text-xs"></i>
+                </div>
+                <div class="flex-1 bg-white rounded-2xl p-4 shadow-sm border border-gray-100 overflow-hidden cursor-pointer hover:shadow-md transition-shadow" onclick="event.stopPropagation();openFlightDetail('${quoteJS(item.id)}')">
+                    <div class="flex justify-between items-center gap-3 mb-4">
+                        <div class="min-w-0 flex items-center gap-2">
+                            <span class="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded whitespace-nowrap uppercase">${returnFlight ? '往返' : '航班'}</span>
+                            <span class="text-xs font-bold text-gray-400 truncate">${escapeHTML(dateText)}</span>
+                        </div>
+                        <span class="font-bold text-textMain shrink-0">${amountText}</span>
+                    </div>
+
+                    <div class="divide-y divide-gray-100">
+                        ${flightLegHTML(item, returnFlight ? '去程' : '航班')}
+                        ${returnFlight ? flightLegHTML(item, '返程', returnFlight) : ''}
+                    </div>
+
+                    <div class="border-t border-dashed border-gray-100 my-4"></div>
+
+                    <div class="grid grid-cols-3 gap-x-3 gap-y-4">${detailCells}</div>
+
+                    ${(() => {
+                        const mapFrom = normalizeAirportIATA(sharedMeta.from) || sharedMeta.from || '';
+                        const mapTo = normalizeAirportIATA(sharedMeta.to) || sharedMeta.to || '';
+                        const hasMap = mapFrom && mapTo && getAirportCoord(mapFrom) && getAirportCoord(mapTo);
+                        return hasMap ? `<div class="flight-map-container h-44 w-full rounded-xl mt-3 bg-gray-100 relative overflow-hidden" data-from="${escapeHTML(mapFrom)}" data-to="${escapeHTML(mapTo)}" style="z-index:1"></div>` : '';
+                    })()}
+
+                    ${recordActions(item.id)}
+                </div>
+            `;
+        }
+
+        function hotelMetaLine(item) {
+            const meta = item.meta || {};
+            const bits = [];
+            if (meta.address) bits.push(`<i class="fas fa-map-marker-alt mr-0.5"></i>${escapeHTML(meta.address)}`);
+            if (meta.nights > 0) bits.push(`${meta.nights}晚`);
+            if (meta.platform) bits.push(`通过 ${escapeHTML(meta.platform)}`);
+            if (meta.breakfast) bits.push('含早餐');
+            if (meta.confirmationNo) bits.push(`确认号: ${escapeHTML(meta.confirmationNo)}`);
+            if (!bits.length) return '';
+            return `<div class="text-[10px] font-bold text-gray-400 mt-2">${bits.join(' · ')}</div>`;
+        }
+
+        function expenseMetaLine(item) {
+            const meta = item.meta || {};
+            const bits = [];
+            if (item.category === 'transport') {
+                if (meta.transportType) bits.push(escapeHTML(meta.transportType));
+                if (meta.transportFrom && meta.transportTo) bits.push(escapeHTML(meta.transportFrom) + ' → ' + escapeHTML(meta.transportTo));
+            } else if (item.category === 'food') {
+                if (meta.mealType) bits.push(escapeHTML(meta.mealType));
+                if (meta.diners > 0) bits.push(meta.diners + '人');
+                if (meta.diningRating) bits.push(escapeHTML(meta.diningRating));
+            } else if (item.category === 'tickets') {
+                if (meta.pricePerPerson > 0) bits.push('¥' + meta.pricePerPerson + '/人');
+                if (meta.attractionPeople > 0) bits.push(meta.attractionPeople + '人');
+            }
+            if (!bits.length) return '';
+            return `<div class="text-[10px] font-bold text-gray-400 mt-1">${bits.join(' · ')}</div>`;
         }
 
         function renderHome() {
@@ -1402,9 +2168,22 @@
             const baseSymbol = currencySymbol(base);
             const budget = Number(tripData.budget || 0);
 
+            const legacyReturnIds = new Set();
+            const legacyReturnByOutboundId = new Map();
             bills.forEach(b => {
-                if(b.type !== 'transfer') totalSpentBase += Number(b.baseAmount || 0);
-                timelineEvents.push(b);
+                const outbound = legacyOutboundForReturn(b);
+                if (!outbound) return;
+                legacyReturnIds.add(String(b.id));
+                legacyReturnByOutboundId.set(String(outbound.id), b);
+            });
+
+            bills.forEach(b => {
+                if (legacyReturnIds.has(String(b.id))) return;
+                const displayRecord = legacyReturnByOutboundId.has(String(b.id))
+                    ? mergedFlightForDisplay(b, legacyReturnByOutboundId.get(String(b.id)))
+                    : b;
+                if(displayRecord.type !== 'transfer') totalSpentBase += Number(displayRecord.baseAmount || 0);
+                timelineEvents.push(displayRecord);
             });
 
             // Update Budget Arc
@@ -1451,12 +2230,16 @@
                     const end = safeDate(item.itineraryEnd || item.itineraryStart || item.timestamp);
                     const startText = start.toLocaleDateString('zh-CN', {month:'short',day:'numeric'});
                     const endText = end.toLocaleDateString('zh-CN', {month:'short',day:'numeric'});
+                    if (item.itineraryType === 'flight') {
+                        innerHtml = flightTicketCardHTML(item, catInfo, amountText);
+                    } else {
                     // Itinerary Node (Flight/Hotel)
+                    const detailHTML = timelineDetailHTML(item);
                     innerHtml = `
                         <div class="relative z-10 w-8 h-8 rounded-full ${catInfo.color} flex items-center justify-center border-4 border-background shrink-0 mt-2">
                             <i class="fas ${catInfo.icon} text-xs"></i>
                         </div>
-                        <div class="flex-1 bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+                        <div class="flex-1 bg-white rounded-2xl p-4 shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-shadow" onclick="toggleTimelineDetail(this)">
                             <div class="flex justify-between items-start gap-3 mb-3">
                                 <div>
                                     <span class="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded uppercase">${item.itineraryType === 'flight'?'航班':'酒店'}</span>
@@ -1466,11 +2249,19 @@
                             </div>
                             <h3 class="font-extrabold text-lg leading-snug text-textMain mb-3">${escapeHTML(item.desc || catInfo.label)}</h3>
                             <div class="text-xs font-bold text-gray-500 bg-gray-50 p-2 rounded-lg"><i class="far fa-clock mr-1"></i> ${startText} - ${endText}</div>
-                            ${flightMetaLine(item)}
-                            ${item.location ? `<div class="text-[10px] text-gray-400 mt-2"><i class="fas fa-map-marker-alt"></i> ${escapeHTML(item.location)}</div>` : ''}
-                            ${recordActions(item.id)}
+                            ${item.itineraryType === 'flight' ? flightMetaLine(item) : hotelMetaLine(item)}
+                            ${item.itineraryType !== 'hotel' && item.location ? `<div class="text-[10px] text-gray-400 mt-2"><i class="fas fa-map-marker-alt"></i> ${escapeHTML(item.location)}</div>` : ''}
+                            ${detailHTML ? `<div class="timeline-detail hidden mt-3 pt-3 border-t border-gray-100">${detailHTML}</div>` : ''}
+                            <div class="flex justify-between items-center mt-3 pt-3 border-t border-gray-50">
+                                <span class="timeline-expand-arrow text-[10px] font-bold text-gray-400"><i class="fas fa-chevron-down"></i> ${detailHTML ? '详情' : ''}</span>
+                                <div class="flex gap-1" onclick="event.stopPropagation()">
+                                    <button type="button" class="w-7 h-7 rounded-full bg-gray-50 text-gray-400 hover:text-primary" onclick="openEditBill('${quoteJS(item.id)}')" aria-label="编辑记录"><i class="fas fa-pen text-[10px]"></i></button>
+                                    <button type="button" class="w-7 h-7 rounded-full bg-gray-50 text-gray-400 hover:text-red-500" onclick="deleteBill('${quoteJS(item.id)}')" aria-label="删除记录"><i class="fas fa-trash-alt text-[10px]"></i></button>
+                                </div>
+                            </div>
                         </div>
                     `;
+                    }
                 } else if (isExpense) {
                     innerHtml = `
                         <div class="relative z-10 w-8 h-8 rounded-full ${catInfo.color} flex items-center justify-center border-4 border-background shrink-0 mt-1">
@@ -1487,6 +2278,7 @@
                                     ${item.currency !== base ? `<div class="text-[10px] font-bold text-gray-400">${formatMoney(item.amount, item.currency)} ${escapeHTML(item.currency)}</div>` : ''}
                                 </div>
                             </div>
+                            ${expenseMetaLine(item)}
                             ${recordActions(item.id)}
                         </div>
                     `;
@@ -1511,6 +2303,18 @@
                 node.innerHTML = innerHtml;
                 container.appendChild(node);
             });
+
+            // Auto-render flight maps after DOM is settled
+            setTimeout(() => {
+                document.querySelectorAll('.flight-map-container:not([data-rendered])').forEach(el => {
+                    const from = el.dataset.from;
+                    const to = el.dataset.to;
+                    if (from && to) {
+                        el.setAttribute('data-rendered', '1');
+                        renderFlightMap(el, from, to);
+                    }
+                });
+            }, 300);
         }
 
         // --- NAVIGATION LOGIC ---
@@ -1565,41 +2369,140 @@
             document.getElementById('section-itinerary').classList.toggle('hidden', type !== 'itinerary');
             document.getElementById('section-transfer').classList.toggle('hidden', type !== 'transfer');
             document.getElementById('section-split').classList.toggle('hidden', type === 'transfer');
+            // Hide category sub-sections when not expense
+            if (type !== 'expense') {
+                document.getElementById('section-ground-transport').classList.add('hidden');
+                document.getElementById('section-dining').classList.add('hidden');
+                document.getElementById('section-attraction').classList.add('hidden');
+            }
 
             // Show/hide round-trip toggle based on itinerary sub-type
             if (type === 'itinerary') updateFlightTripTypeUI();
         }
 
+        // Itinerary type buttons (flight/hotel)
+        document.querySelectorAll('.itinerary-type-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const type = this.dataset.itType;
+                document.querySelector('input[name="itinerary-type"]').value = type;
+                document.querySelectorAll('.itinerary-type-btn').forEach(b => {
+                    b.classList.toggle('active', b === this);
+                    b.classList.toggle('border-primary', b === this);
+                    b.classList.toggle('text-primary', b === this);
+                    b.classList.toggle('border-gray-100', b !== this);
+                    b.classList.toggle('text-gray-400', b !== this);
+                });
+                updateFlightTripTypeUI();
+            });
+        });
+
+        // Flight trip type buttons (oneway/roundtrip)
+        document.querySelectorAll('.flight-trip-type-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const type = this.dataset.tripType;
+                document.querySelector('input[name="flight-trip-type"]').value = type;
+                document.querySelectorAll('.flight-trip-type-btn').forEach(b => {
+                    b.classList.toggle('active', b === this);
+                    b.classList.toggle('border-primary', b === this);
+                    b.classList.toggle('text-primary', b === this);
+                    b.classList.toggle('bg-primary/5', b === this);
+                    b.classList.toggle('border-gray-100', b !== this);
+                    b.classList.toggle('text-gray-400', b !== this);
+                });
+                updateReturnVisibility();
+            });
+        });
+
         // Round-trip toggle logic
         function updateFlightTripTypeUI() {
-            const itType = document.querySelector('input[name="itinerary-type"]:checked');
-            const isFlight = itType && itType.value === 'flight';
+            const itType = document.querySelector('input[name="itinerary-type"]').value;
+            const isFlight = itType === 'flight';
+            const flightFields = document.getElementById('flight-fields');
+            const hotelFields = document.getElementById('hotel-fields');
             const toggle = document.getElementById('flight-roundtrip-toggle');
             const returnSection = document.getElementById('flight-return');
-            const sectionLabel = document.getElementById('itinerary-section-label');
-            const titleInput = document.getElementById('itinerary-title');
 
-            if (toggle) toggle.classList.toggle('hidden', !isFlight);
-            if (!isFlight && returnSection) returnSection.classList.add('hidden');
+            // Show/hide flight vs hotel field groups
+            if (flightFields) flightFields.classList.toggle('hidden', !isFlight);
+            if (hotelFields) hotelFields.classList.toggle('hidden', isFlight);
 
-            // Swap labels based on itinerary type
             if (isFlight) {
-                if (sectionLabel) sectionLabel.textContent = '航班信息';
-                if (titleInput) titleInput.placeholder = '航班号 (如 CA123)';
+                if (toggle) toggle.classList.toggle('hidden', false);
                 updateReturnVisibility();
             } else {
-                if (sectionLabel) sectionLabel.textContent = '酒店信息';
-                if (titleInput) titleInput.placeholder = '酒店名称';
+                if (toggle) toggle.classList.add('hidden');
+                if (returnSection) returnSection.classList.add('hidden');
             }
         }
 
         function updateReturnVisibility() {
-            const roundtripRadio = document.querySelector('input[name="flight-trip-type"][value="roundtrip"]');
+            const isRoundtrip = document.querySelector('input[name="flight-trip-type"]').value === 'roundtrip';
             const returnSection = document.getElementById('flight-return');
-            if (returnSection && roundtripRadio) {
-                returnSection.classList.toggle('hidden', !roundtripRadio.checked);
+            if (returnSection) {
+                returnSection.classList.toggle('hidden', !isRoundtrip);
             }
         }
+
+        // Flight "more info" toggle
+        window.toggleFlightMore = function() {
+            const more = document.getElementById('flight-more');
+            const btn = document.getElementById('btn-flight-more');
+            if (!more || !btn) return;
+            const isHidden = more.classList.contains('hidden');
+            more.classList.toggle('hidden');
+            btn.innerHTML = isHidden
+                ? '<i class="fas fa-chevron-up mr-1"></i>收起'
+                : '<i class="fas fa-chevron-down mr-1"></i>更多信息';
+        };
+
+        // Flight screenshot: convert to base64 data URL (stored in hidden field)
+        window.handleFlightScreenshot = function(input) {
+            const file = input.files && input.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById('flight-screenshot').value = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        };
+
+        // Hotel: auto-calculate nights and total price
+        function updateHotelNights() {
+            const checkin = document.getElementById('hotel-checkin')?.value;
+            const checkout = document.getElementById('hotel-checkout')?.value;
+            const nightsEl = document.getElementById('hotel-nights');
+            const priceNight = parseFloat(document.getElementById('hotel-price-night')?.value) || 0;
+            const totalEl = document.getElementById('hotel-price-total');
+
+            if (checkin && checkout) {
+                const d1 = new Date(checkin);
+                const d2 = new Date(checkout);
+                const nights = Math.max(0, Math.round((d2 - d1) / (1000 * 60 * 60 * 24)));
+                if (nightsEl) nightsEl.textContent = nights + '晚';
+                if (totalEl && nights > 0) totalEl.value = (priceNight * nights).toFixed(2);
+            } else {
+                if (nightsEl) nightsEl.textContent = '0晚';
+                if (totalEl) totalEl.value = '';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const hotelCheckin = document.getElementById('hotel-checkin');
+            const hotelCheckout = document.getElementById('hotel-checkout');
+            const hotelPrice = document.getElementById('hotel-price-night');
+            if (hotelCheckin) hotelCheckin.addEventListener('change', updateHotelNights);
+            if (hotelCheckout) hotelCheckout.addEventListener('change', updateHotelNights);
+            if (hotelPrice) hotelPrice.addEventListener('input', updateHotelNights);
+            // Hotel address → map link
+            const hotelAddr = document.getElementById('hotel-address');
+            const hotelMap = document.getElementById('hotel-map-link');
+            if (hotelAddr && hotelMap) {
+                hotelAddr.addEventListener('input', function() {
+                    const addr = encodeURIComponent(this.value.trim());
+                    hotelMap.href = addr ? `https://maps.google.com/?q=${addr}` : '#';
+                });
+            }
+        });
 
         document.querySelectorAll('input[name="itinerary-type"]').forEach(r => {
             r.addEventListener('change', updateFlightTripTypeUI);
@@ -1624,6 +2527,10 @@
                 b.classList.toggle('bg-primary/5', active);
                 b.classList.toggle('border-gray-100', !active);
             });
+            // Show/hide category-specific sections
+            document.getElementById('section-ground-transport').classList.toggle('hidden', currentCategory !== 'transport');
+            document.getElementById('section-dining').classList.toggle('hidden', currentCategory !== 'food');
+            document.getElementById('section-attraction').classList.toggle('hidden', currentCategory !== 'tickets');
         }
 
         document.querySelectorAll('.category-btn').forEach(btn => {
@@ -1657,22 +2564,59 @@
             const type = record ? record.type : 'expense';
             const selectedCurrency = record ? (record.currency || tripData.foreignCurrency) : tripData.foreignCurrency;
             const payerName = record ? (record.payer || defaultPayerName()) : defaultPayerName();
+            const meta = record ? (record.meta || {}) : {};
 
             form.reset();
             editingBillId = record ? record.id : null;
             submitBtn.textContent = record ? '更新记录' : '保存记录';
 
             // Reset round-trip fields
-            const onewayRadio = document.querySelector('input[name="flight-trip-type"][value="oneway"]');
-            if (onewayRadio) onewayRadio.checked = true;
+            document.querySelector('input[name="flight-trip-type"]').value = 'oneway';
+            document.querySelectorAll('.flight-trip-type-btn').forEach(b => {
+                const active = b.dataset.tripType === 'oneway';
+                b.classList.toggle('active', active);
+                b.classList.toggle('border-primary', active);
+                b.classList.toggle('text-primary', active);
+                b.classList.toggle('bg-primary/5', active);
+                b.classList.toggle('border-gray-100', !active);
+                b.classList.toggle('text-gray-400', !active);
+            });
             const returnSection = document.getElementById('flight-return');
             if (returnSection) returnSection.classList.add('hidden');
-            const retTitle = document.getElementById('itinerary-return-title');
-            if (retTitle) retTitle.value = '';
-            const retStart = document.getElementById('itinerary-return-start');
-            if (retStart) retStart.value = '';
-            const retEnd = document.getElementById('itinerary-return-end');
-            if (retEnd) retEnd.value = '';
+            // Reset flight more info
+            const flightMore = document.getElementById('flight-more');
+            if (flightMore) flightMore.classList.add('hidden');
+            const btnFlightMore = document.getElementById('btn-flight-more');
+            if (btnFlightMore) btnFlightMore.innerHTML = '<i class="fas fa-chevron-down mr-1"></i>更多信息';
+
+            // Reset flight extra fields
+            ['flight-from','flight-to','flight-cabin','flight-baggage-free','flight-baggage-excess',
+             'flight-transit-airport','flight-transit-duration','flight-platform','flight-seat-no',
+             'flight-ticket-no','flight-aircraft-type','flight-order-no','flight-screenshot',
+             'flight-return-from','flight-return-to','flight-return-cabin',
+             'itinerary-return-title','itinerary-return-start','itinerary-return-end'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+
+            // Reset hotel fields
+            ['hotel-name','hotel-address','hotel-checkin','hotel-checkout','hotel-price-night',
+             'hotel-price-total','hotel-platform','hotel-confirm-no'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+            const hotelBreakfast = document.getElementById('hotel-breakfast');
+            if (hotelBreakfast) hotelBreakfast.checked = false;
+            const hotelNights = document.getElementById('hotel-nights');
+            if (hotelNights) hotelNights.textContent = '0晚';
+
+            // Reset expense sub-sections
+            ['transport-type','transport-from','transport-to','transport-time','transport-photo',
+             'dining-name','dining-meal-type','dining-diners','dining-rating',
+             'attraction-name','attraction-time','attraction-price-per','attraction-people','attraction-photo'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
 
             // Populate select dropdowns
             const opts = members.map(m => `<option value="${escapeHTML(m)}">${escapeHTML(m)}</option>`).join('');
@@ -1686,7 +2630,6 @@
             currSelector.innerHTML = renderCurrencyOptions(selectedCurrency);
             currSelector.value = String(selectedCurrency || tripData.baseCurrency).toUpperCase();
             
-            // Update currency symbol dynamically when changed
             currSelector.onchange = async (e) => {
                 const currency = e.target.value;
                 document.getElementById('currency-symbol').textContent = currencySymbol(currency);
@@ -1709,18 +2652,107 @@
 
                 if (record.type === 'itinerary') {
                     const itType = record.itineraryType || record.category || 'flight';
-                    const itRadio = document.querySelector(`input[name="itinerary-type"][value="${itType}"]`);
-                    if (itRadio) itRadio.checked = true;
-                    document.getElementById('itinerary-title').value = record.desc || '';
-                    document.getElementById('itinerary-start').value = toDateTimeInput(record.itineraryStart || record.timestamp);
-                    document.getElementById('itinerary-end').value = toDateTimeInput(record.itineraryEnd || record.itineraryStart || record.timestamp);
+                    document.querySelector('input[name="itinerary-type"]').value = itType;
+                    document.querySelectorAll('.itinerary-type-btn').forEach(b => {
+                        const active = b.dataset.itType === itType;
+                        b.classList.toggle('active', active);
+                        b.classList.toggle('border-primary', active);
+                        b.classList.toggle('text-primary', active);
+                        b.classList.toggle('border-gray-100', !active);
+                        b.classList.toggle('text-gray-400', !active);
+                    });
                     updateFlightTripTypeUI();
+
+                    if (itType === 'flight') {
+                        // Flight fields
+                        document.getElementById('itinerary-title').value = record.desc || '';
+                        document.getElementById('itinerary-start').value = toDateTimeInput(record.itineraryStart || record.timestamp);
+                        document.getElementById('itinerary-end').value = toDateTimeInput(record.itineraryEnd || record.itineraryStart || record.timestamp);
+                        setVal('flight-from', meta.from || '');
+                        setVal('flight-to', meta.to || '');
+                        setVal('flight-cabin', meta.cabin || 'economy');
+                        setVal('flight-from-tz', meta.fromTz || '+8');
+                        setVal('flight-to-tz', meta.toTz || '+9');
+                        setVal('flight-baggage-free', meta.baggageFree || '');
+                        setVal('flight-baggage-excess', meta.baggageExcessFee || '');
+                        setVal('flight-transit-airport', meta.transitAirport || '');
+                        setVal('flight-transit-duration', meta.transitDuration || '');
+                        setVal('flight-platform', meta.platform || '');
+                        setVal('flight-seat-no', meta.seatNo || meta.seat || '');
+                        setVal('flight-ticket-no', meta.ticketNo || meta.passengerNo || '');
+                        setVal('flight-aircraft-type', meta.aircraftType || '');
+                        setVal('flight-order-no', meta.orderNo || '');
+                        setVal('flight-screenshot', meta.screenshot || '');
+                        // Expand "more info" if any advanced field has data
+                        if (meta.baggageFree || meta.baggageExcessFee || meta.transitAirport || meta.orderNo || meta.screenshot || meta.platform || meta.seatNo || meta.seat || meta.ticketNo || meta.passengerNo || meta.aircraftType) {
+                            if (flightMore) flightMore.classList.remove('hidden');
+                            if (btnFlightMore) btnFlightMore.innerHTML = '<i class="fas fa-chevron-up mr-1"></i>收起';
+                        }
+                        const returnFlight = normalizeReturnFlightPayload(meta.returnFlight) || legacyReturnToPayload(findLegacyReturnRecord(record));
+                        if (returnFlight) {
+                            document.querySelector('input[name="flight-trip-type"]').value = 'roundtrip';
+                            document.querySelectorAll('.flight-trip-type-btn').forEach(b => {
+                                const active = b.dataset.tripType === 'roundtrip';
+                                b.classList.toggle('active', active);
+                                b.classList.toggle('border-primary', active);
+                                b.classList.toggle('text-primary', active);
+                                b.classList.toggle('bg-primary/5', active);
+                                b.classList.toggle('border-gray-100', !active);
+                                b.classList.toggle('text-gray-400', !active);
+                            });
+                            updateReturnVisibility();
+                            const returnMeta = returnFlight.meta || {};
+                            setVal('itinerary-return-title', returnFlight.desc || '');
+                            setVal('itinerary-return-start', toDateTimeInput(returnFlight.itineraryStart || returnFlight.timestamp));
+                            setVal('itinerary-return-end', toDateTimeInput(returnFlight.itineraryEnd || returnFlight.itineraryStart || returnFlight.timestamp));
+                            setVal('flight-return-from', returnMeta.from || '');
+                            setVal('flight-return-to', returnMeta.to || '');
+                            setVal('flight-return-cabin', returnMeta.cabin || meta.cabin || 'economy');
+                        }
+                    } else if (itType === 'hotel') {
+                        // Hotel fields
+                        setVal('hotel-name', record.desc || meta.hotelName || '');
+                        setVal('hotel-address', record.location || meta.address || '');
+                        setVal('hotel-checkin', meta.checkin || (record.itineraryStart ? record.itineraryStart.slice(0,10) : ''));
+                        setVal('hotel-checkout', meta.checkout || (record.itineraryEnd ? record.itineraryEnd.slice(0,10) : ''));
+                        setVal('hotel-price-night', meta.pricePerNight || '');
+                        setVal('hotel-platform', meta.platform || '');
+                        setVal('hotel-confirm-no', meta.confirmationNo || '');
+                        if (meta.breakfast) {
+                            const cb = document.getElementById('hotel-breakfast');
+                            if (cb) cb.checked = true;
+                        }
+                        updateHotelNights();
+                    }
+                } else if (record.type === 'expense' && record.category) {
+                    const m = record.meta || {};
+                    if (record.category === 'transport') {
+                        setVal('transport-type', m.transportType || '');
+                        setVal('transport-from', m.transportFrom || '');
+                        setVal('transport-to', m.transportTo || '');
+                        setVal('transport-time', m.transportTime || '');
+                        setVal('transport-photo', m.transportPhoto || '');
+                    } else if (record.category === 'food') {
+                        setVal('dining-name', m.diningName || '');
+                        setVal('dining-meal-type', m.mealType || '');
+                        setVal('dining-diners', m.diners || '');
+                        setVal('dining-rating', m.diningRating || '');
+                    } else if (record.category === 'tickets') {
+                        setVal('attraction-name', m.attractionName || '');
+                        setVal('attraction-time', m.attractionTime || '');
+                        setVal('attraction-price-per', m.pricePerPerson || '');
+                        setVal('attraction-people', m.attractionPeople || '');
+                        setVal('attraction-photo', m.attractionPhoto || '');
+                    }
                 }
             } else {
                 document.getElementById('modal-payer').value = payerName;
                 document.getElementById('transfer-from').value = payerName;
                 const receiver = members.find(m => m !== payerName) || payerName;
                 document.getElementById('transfer-to').value = receiver;
+                // Default timezone for new flight
+                setVal('flight-from-tz', '+8');
+                setVal('flight-to-tz', '+9');
             }
 
             // Default checkboxes
@@ -1736,6 +2768,37 @@
             document.querySelectorAll('input[name="split-participants"]').forEach(cb => cb.addEventListener('change', updateSplitSummaryText));
             updateSplitSummaryText();
         }
+
+        // Helper: set value if element exists
+        function setVal(id, value) {
+            const el = document.getElementById(id);
+            if (el) el.value = value ?? '';
+        }
+
+        window.handleTransportPhoto = function(input) {
+            const file = input.files && input.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) { document.getElementById('transport-photo').value = e.target.result; };
+            reader.readAsDataURL(file);
+        };
+        window.handleAttractionPhoto = function(input) {
+            const file = input.files && input.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) { document.getElementById('attraction-photo').value = e.target.result; };
+            reader.readAsDataURL(file);
+        };
+        (function() {
+            const pp = document.getElementById('attraction-price-per');
+            const pc = document.getElementById('attraction-people');
+            const total = document.getElementById('attraction-total');
+            if (pp && pc && total) {
+                const calc = () => { total.value = ((parseFloat(pp.value)||0) * (parseInt(pc.value)||1)).toFixed(2); };
+                pp.addEventListener('input', calc);
+                pc.addEventListener('input', calc);
+            }
+        })();
 
         function updateSplitSummaryText() {
             const payer = document.getElementById('modal-payer').value || defaultPayerName();
@@ -1799,41 +2862,6 @@
             }
         }
 
-        // Local airline code -> name mapping (no API needed)
-        const AIRLINE_NAMES = {
-            'CA': '中国国际航空', 'MU': '中国东方航空', 'CZ': '中国南方航空', 'HU': '海南航空',
-            '3U': '四川航空', 'ZH': '深圳航空', 'MF': '厦门航空', 'FM': '上海航空',
-            'HO': '吉祥航空', 'JD': '首都航空', 'GS': '天津航空', '8L': '祥鹏航空',
-            'PN': '西部航空', 'G5': '华夏航空', 'SC': '山东航空', 'KN': '中国联合航空',
-            'EU': '成都航空', 'NS': '河北航空', 'BK': '奥凯航空', 'DZ': '东海航空',
-            '9C': '春秋航空', 'AQ': '九元航空', 'RY': '江西航空', 'QW': '青岛航空',
-            'TV': '西藏航空', 'KY': '昆明航空', 'OQ': '重庆航空', 'GJ': '长龙航空',
-            'DR': '瑞丽航空', 'FU': '福州航空', 'Y8': '金鹏航空', 'UQ': '乌鲁木齐航空',
-            'JL': '日本航空', 'NH': '全日空', 'MM': '乐桃航空', 'GK': '捷星日本',
-            'TG': '泰国国际航空', 'FD': '泰国亚航', 'SL': '泰国狮航', 'VZ': '泰国越捷',
-            'KE': '大韩航空', 'OZ': '韩亚航空', '7C': '济州航空', 'LJ': '真航空',
-            'SQ': '新加坡航空', 'TR': '酷航', 'CX': '国泰航空', 'UO': '香港快运',
-            'BR': '长荣航空', 'CI': '中华航空', 'IT': '台湾虎航',
-            'UA': '美联航', 'DL': '达美航空', 'AA': '美国航空', 'BA': '英国航空',
-            'AF': '法国航空', 'LH': '汉莎航空', 'EK': '阿联酋航空', 'QR': '卡塔尔航空',
-        };
-
-        function extractFlightNo(text) {
-            // Match patterns like CA123, MU5678, 3U8765, JL086, etc.
-            const match = String(text || '').toUpperCase().match(/\b([A-Z0-9]{2})\s?(\d{2,5})\b/);
-            return match ? match[1] + match[2] : '';
-        }
-
-        function getAirlineFromCode(flightNo) {
-            if (!flightNo || flightNo.length < 3) return '';
-            // Try 2-char code first, then 2-char+digit
-            const code2 = flightNo.slice(0, 2);
-            if (AIRLINE_NAMES[code2]) return AIRLINE_NAMES[code2];
-            // Try 1-char+digit code (e.g., 3U, 8L, 9C)
-            const code1d = flightNo.slice(0, 2);
-            return AIRLINE_NAMES[code1d] || '';
-        }
-
         async function enrichFlightRecord(record) {
             if (record.type !== 'itinerary' || record.itineraryType !== 'flight') return record;
 
@@ -1855,77 +2883,299 @@
                 }
             }
 
-            // Try API for route details (from/to), skip if no key
-            let apiKey = localStorage.getItem('aviationstack_api_key');
-            if (apiKey === '__skipped__') {
-                record.meta._enriched = enriched;
-                return record;
+            // Try API for route details (from/to)
+            // Prefer AirLabs (more reliable free tier) over Aviationstack
+            let apiData = null;
+
+            // Try AirLabs
+            let airlabsKey = localStorage.getItem('airlabs_api_key');
+            if (airlabsKey && airlabsKey !== '__skipped__') {
+                try { apiData = await fetchAirLabsFlight(flightNo, airlabsKey); } catch(e) {}
             }
-            if (!apiKey) {
-                apiKey = prompt('想自动识别航线（如 北京→东京）？请粘贴 Aviationstack API Key。\n留空跳过，航班号仍会保存。\n（免费注册：https://aviationstack.com/signup/free）');
-                if (!apiKey || !apiKey.trim()) {
-                    localStorage.setItem('aviationstack_api_key', '__skipped__');
-                    record.meta._enriched = enriched;
-                    return record;
+            // Fallback to Aviationstack
+            if (!apiData) {
+                let avKey = localStorage.getItem('aviationstack_api_key');
+                if (avKey && avKey !== '__skipped__') {
+                    try { apiData = await fetchAviationstackFlight(flightNo, avKey); } catch(e) {}
                 }
-                localStorage.setItem('aviationstack_api_key', apiKey.trim());
             }
 
-            try {
-                const params = new URLSearchParams({ access_key: apiKey.trim(), flight_iata: flightNo, limit: '1' });
-                if (record.itineraryStart) params.set('flight_date', record.itineraryStart.slice(0, 10));
-                const response = await fetch(`https://api.aviationstack.com/v1/flights?${params.toString()}`);
-                if (!response.ok) throw new Error('flight request failed');
-                const payload = await response.json();
-                if (payload.error) throw new Error(payload.error.message || 'flight api error');
-                const flight = payload.data && payload.data[0];
-                if (!flight) {
-                    record.meta._enriched = enriched;
-                    return record;
-                }
-
-                const dep = flight.departure || {};
-                const arr = flight.arrival || {};
-                const airline = flight.airline || {};
-                const flightInfo = flight.flight || {};
-                const aircraft = flight.aircraft || {};
-                const depCode = dep.iata || dep.airport || '';
-                const arrCode = arr.iata || arr.airport || '';
-
-                // Extract all useful fields from API (max value per call)
+            if (apiData && apiData.from) {
+                // Merge API data into record meta
                 record.meta = {
                     ...(record.meta || {}),
-                    flightNo: flightInfo.iata || flightNo,
-                    from: depCode,
-                    to: arrCode,
-                    fromName: dep.airport || '',
-                    toName: arr.airport || '',
-                    airline: airline.name || record.meta.airline || localAirline || '',
-                    status: flight.flight_status || '',
-                    depScheduled: dep.scheduled || '',
-                    arrScheduled: arr.scheduled || '',
-                    depActual: dep.actual || '',
-                    arrActual: arr.actual || '',
-                    depTerminal: dep.terminal || '',
-                    depGate: dep.gate || '',
-                    arrTerminal: arr.terminal || '',
-                    arrGate: arr.gate || '',
-                    depDelay: dep.delay != null ? Number(dep.delay) : null,
-                    arrDelay: arr.delay != null ? Number(arr.delay) : null,
-                    aircraftType: aircraft?.iata || aircraft?.icao || '',
-                    aircraftReg: flight.aircraft?.registration || '',
-                    _enriched: depCode && arrCode ? 'full' : 'airline'
+                    flightNo: apiData.flightNo || flightNo,
+                    from: apiData.from || record.meta.from || '',
+                    to: apiData.to || record.meta.to || '',
+                    fromName: apiData.fromName || record.meta.fromName || '',
+                    toName: apiData.toName || record.meta.toName || '',
+                    airline: apiData.airline || record.meta.airline || localAirline || '',
+                    status: apiData.status || record.meta.status || '',
+                    depScheduled: apiData.depScheduled || record.meta.depScheduled || '',
+                    arrScheduled: apiData.arrScheduled || record.meta.arrScheduled || '',
+                    depTerminal: apiData.depTerminal || record.meta.depTerminal || '',
+                    depGate: apiData.depGate || record.meta.depGate || '',
+                    arrTerminal: apiData.arrTerminal || record.meta.arrTerminal || '',
+                    arrGate: apiData.arrGate || record.meta.arrGate || '',
+                    depDelay: apiData.depDelay != null ? apiData.depDelay : (record.meta.depDelay ?? null),
+                    aircraftType: apiData.aircraftType || record.meta.aircraftType || '',
+                    _enriched: 'full'
                 };
-
-                if (depCode && arrCode) {
-                    record.desc = `${flightInfo.iata || flightNo} ${depCode} → ${arrCode}`;
-                    if (airline.name) record.desc += ` (${airline.name})`;
-                }
-            } catch (err) {
-                // API failed but we already have local airline info
-                record.meta = { ...(record.meta || {}), _enriched: enriched, lookupError: '航线查询失败' };
+                record.desc = `${apiData.flightNo || flightNo} ${apiData.from} → ${apiData.to}`;
+                if (apiData.airline) record.desc += ` (${apiData.airline})`;
+                // Share to flight cache
+                cacheFlightInfo(flightNo, apiData);
+            } else {
+                record.meta._enriched = enriched;
             }
             return record;
+        }
+
+        // --- FLIGHT LOOKUP CACHE (localStorage + Supabase shared) ---
+        function getFlightCache() {
+            try { return JSON.parse(localStorage.getItem('flightCache') || '{}'); } catch(e) { return {}; }
+        }
+        function setFlightCache(cache) {
+            try { localStorage.setItem('flightCache', JSON.stringify(cache)); } catch(e) {}
+        }
+        function getCachedFlightLocal(flightNo) {
+            const cache = getFlightCache();
+            return cache[flightNo.toUpperCase()] || null;
+        }
+        async function getCachedFlightSupabase(flightNo) {
+            if (!cloudClient) return null;
+            try {
+                const { data, error } = await cloudClient.from('flight_cache')
+                    .select('data').eq('flight_no', flightNo.toUpperCase()).maybeSingle();
+                if (error) {
+                    // 406 = table not found (need to run supabase-schema.sql)
+                    if (error.code === '406' || error.code === 'PGRST116') return null;
+                    return null;
+                }
+                return data ? data.data : null;
+            } catch(e) { return null; }
+        }
+        async function getCachedFlight(flightNo) {
+            // 1. Check localStorage (fast, offline)
+            const local = getCachedFlightLocal(flightNo);
+            if (local) return local;
+            // 2. Check Supabase shared cache
+            const remote = await getCachedFlightSupabase(flightNo);
+            if (remote) {
+                // Sync to localStorage for next time
+                cacheFlightInfoLocal(flightNo, remote);
+                return remote;
+            }
+            return null;
+        }
+        function cacheFlightInfoLocal(flightNo, data) {
+            const cache = getFlightCache();
+            cache[flightNo.toUpperCase()] = { ...data, _cachedAt: Date.now() };
+            const keys = Object.keys(cache).sort((a,b) => (cache[b]._cachedAt||0) - (cache[a]._cachedAt||0));
+            if (keys.length > 50) keys.slice(50).forEach(k => delete cache[k]);
+            setFlightCache(cache);
+        }
+        async function cacheFlightInfoRemote(flightNo, data) {
+            if (!cloudClient) return;
+            try {
+                await cloudClient.from('flight_cache').upsert({
+                    flight_no: flightNo.toUpperCase(),
+                    data: data,
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'flight_no' });
+            } catch(e) { /* silent */ }
+        }
+        async function cacheFlightInfo(flightNo, data) {
+            cacheFlightInfoLocal(flightNo, data);       // local fast access
+            cacheFlightInfoRemote(flightNo, data);      // shared with friends & phone (fire-and-forget)
+        }
+
+        // --- LOOKUP BUTTON: fetch flight info and auto-fill form ---
+        window.lookupFlightInfo = async function(which) {
+            const isReturn = which === 'return';
+            const prefix = isReturn ? 'itinerary-return-' : '';
+            const titleInput = document.getElementById(isReturn ? 'itinerary-return-title' : 'itinerary-title');
+            const flightNo = extractFlightNo(titleInput?.value || '');
+            if (!flightNo) return showAlert('无法识别', '请输入有效的航班号（如 NH816、CA123）。', 'error');
+
+            const btn = document.getElementById(isReturn ? 'btn-flight-lookup-return' : 'btn-flight-lookup');
+            const origHTML = btn ? btn.innerHTML : '';
+            if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 查询中'; }
+
+            try {
+                // 1. Check cache (localStorage → Supabase shared)
+                const cached = await getCachedFlight(flightNo);
+                if (cached && cached.from) {
+                    fillFlightForm(which, cached);
+                    if (btn) { btn.disabled = false; btn.innerHTML = origHTML; }
+                    setCloudMessage(`已加载 ${flightNo}（缓存：${cached.from}→${cached.to}）`, 'success');
+                    return;
+                }
+
+                // 2. Try local airline name
+                const localAirline = getAirlineFromCode(flightNo);
+
+                // 3. Try flight APIs (keys from cloud settings)
+                let enriched = null;
+                let usedAPI = '';
+
+                let airlabsKey = localStorage.getItem('airlabs_api_key');
+                if (airlabsKey && airlabsKey !== '__skipped__') {
+                    try { enriched = await fetchAirLabsFlight(flightNo, airlabsKey); if (enriched) usedAPI = 'AirLabs'; } catch(e) {}
+                }
+                if (!enriched) {
+                    let avKey = localStorage.getItem('aviationstack_api_key');
+                    if (avKey && avKey !== '__skipped__') {
+                        try { enriched = await fetchAviationstackFlight(flightNo, avKey); if (enriched) usedAPI = 'Aviationstack'; } catch(e) {}
+                    }
+                }
+
+                if (enriched && enriched.from) {
+                    // Got full data from API
+                    cacheFlightInfo(flightNo, enriched);
+                    fillFlightForm(which, enriched);
+                    if (btn) { btn.disabled = false; btn.innerHTML = origHTML; }
+                    setCloudMessage(`已查询 ${flightNo}（${usedAPI}）：${enriched.from} → ${enriched.to}`, 'success');
+                    return;
+                }
+
+                // No API data, fall back to local airline
+                if (localAirline) {
+                    cacheFlightInfo(flightNo, { flightNo, airline: localAirline });
+                    updateFlightFormAirline(which, localAirline);
+                }
+                if (btn) { btn.disabled = false; btn.innerHTML = origHTML; }
+                setCloudMessage(localAirline
+                    ? `已识别航司：${localAirline}（在账号同步中配置 API Key 可获取航线）`
+                    : `未找到 ${flightNo} 的信息，请检查航班号或去账号同步配置 API Key。`, 'muted');
+            } catch (err) {
+                console.error('Flight lookup failed:', err);
+                if (btn) { btn.disabled = false; btn.innerHTML = origHTML; }
+                showAlert('查询失败', '航班查询失败，请检查网络或 API Key 是否有效。', 'error');
+            }
+        };
+
+        function fillFlightForm(which, info) {
+            const isReturn = which === 'return';
+            const fieldPrefix = isReturn ? 'flight-return-' : 'flight-';
+            const timePrefix = isReturn ? 'itinerary-return-' : '';
+            setVal(fieldPrefix + 'from', info.from || '');
+            setVal(fieldPrefix + 'to', info.to || '');
+            if (info.depScheduled) {
+                setVal(timePrefix + 'itinerary-start', toDatetimeLocal(info.depScheduled));
+            }
+            if (info.arrScheduled) {
+                setVal(timePrefix + 'itinerary-end', toDatetimeLocal(info.arrScheduled));
+            }
+            // Auto-set timezone based on IATA codes (outbound only for now)
+            if (!isReturn) {
+                if (info.from) autoSetTimezone('flight-from-tz', info.from);
+                if (info.to) autoSetTimezone('flight-to-tz', info.to);
+            }
+            // Fill more-info fields
+            if (info.aircraftType) setVal('flight-aircraft-type', info.aircraftType);
+            if (info.depTerminal || info.depGate) {
+                // Show in more info section
+                const flightMore = document.getElementById('flight-more');
+                if (flightMore && flightMore.classList.contains('hidden')) {
+                    flightMore.classList.remove('hidden');
+                    const btn = document.getElementById('btn-flight-more');
+                    if (btn) btn.innerHTML = '<i class="fas fa-chevron-up mr-1"></i>收起';
+                }
+            }
+        }
+
+        // Normalize time string to datetime-local format (YYYY-MM-DDTHH:MM)
+        function toDatetimeLocal(value) {
+            if (!value) return '';
+            // Already ISO format with T
+            let s = String(value).trim();
+            if (s.includes('T')) return s.slice(0, 16);
+            // AirLabs format: "2026-06-18 08:30" → insert T
+            s = s.replace(' ', 'T');
+            return s.slice(0, 16);
+        }
+
+        function updateFlightFormAirline(which, airlineName) {
+            const titleInput = document.getElementById(which === 'return' ? 'itinerary-return-title' : 'itinerary-title');
+            if (titleInput && airlineName && !titleInput.value.includes(airlineName)) {}
+        }
+
+        // --- Unified flight API helpers ---
+        async function promptForAPIKey(label, signupUrl, storageKey) {
+            const key = prompt(label + '\n\n请粘贴 API Key（留空跳过）：\n注册：' + signupUrl);
+            if (!key || !key.trim()) { localStorage.setItem(storageKey, '__skipped__'); return null; }
+            localStorage.setItem(storageKey, key.trim());
+            return key.trim();
+        }
+
+        async function fetchAirLabsFlight(flightNo, apiKey) {
+            const params = new URLSearchParams({ api_key: apiKey, flight_iata: flightNo });
+            const resp = await fetch('https://airlabs.co/api/v9/flight?' + params);
+            if (!resp.ok) throw new Error('AirLabs failed');
+            const json = await resp.json();
+            if (!json.response) throw new Error('AirLabs no data');
+            const f = json.response;
+            const fromIATA = normalizeAirportIATA(f.dep_iata || f.dep_name || '') || f.dep_iata || '';
+            const toIATA = normalizeAirportIATA(f.arr_iata || f.arr_name || '') || f.arr_iata || '';
+            return {
+                flightNo: f.flight_iata || flightNo, from: fromIATA, to: toIATA,
+                fromName: f.dep_name || '', toName: f.arr_name || '',
+                airline: f.airline_name || '', status: f.status || '',
+                depScheduled: f.dep_time || '', arrScheduled: f.arr_time || '',
+                depTerminal: f.dep_terminal || '', depGate: f.dep_gate || '',
+                arrTerminal: f.arr_terminal || '', arrGate: f.arr_gate || '',
+                depDelay: f.dep_delayed || null, aircraftType: f.aircraft_icao || ''
+            };
+        }
+
+        async function fetchAviationstackFlight(flightNo, apiKey) {
+            const params = new URLSearchParams({ access_key: apiKey, flight_iata: flightNo, limit: '1' });
+            const resp = await fetch('https://api.aviationstack.com/v1/flights?' + params);
+            if (!resp.ok) throw new Error('Aviationstack failed');
+            const json = await resp.json();
+            if (json.error || !json.data || !json.data[0]) throw new Error('Aviationstack no data');
+            const f = json.data[0], dep = f.departure || {}, arr = f.arrival || {}, al = f.airline || {}, fi = f.flight || {};
+            const rawFrom = dep.iata || dep.airport || '';
+            const rawTo = arr.iata || arr.airport || '';
+            const fromIATA = normalizeAirportIATA(rawFrom) || rawFrom;
+            const toIATA = normalizeAirportIATA(rawTo) || rawTo;
+            return {
+                flightNo: fi.iata || flightNo, from: fromIATA, to: toIATA,
+                fromName: dep.airport || '', toName: arr.airport || '',
+                airline: al.name || '', status: f.flight_status || '',
+                depScheduled: dep.scheduled || '', arrScheduled: arr.scheduled || '',
+                depTerminal: dep.terminal || '', depGate: dep.gate || '',
+                arrTerminal: arr.terminal || '', arrGate: arr.gate || '',
+                depDelay: dep.delay != null ? Number(dep.delay) : null,
+                aircraftType: f.aircraft?.iata || f.aircraft?.icao || ''
+            };
+        }
+
+        function autoSetTimezone(tzSelectId, iataCode) {
+            const tzMap = {
+                'PEK': '+8','PVG': '+8','CAN': '+8','CTU': '+8','SZX': '+8','HGH': '+8','WUH': '+8','CKG': '+8','XIY': '+8','KMG': '+8',
+                'NRT': '+9','HND': '+9','KIX': '+9','CTS': '+9','FUK': '+9','OKA': '+9','NGO': '+9',
+                'BKK': '+7','HKT': '+7','CNX': '+7','DMK': '+7',
+                'ICN': '+9','PUS': '+9','CJU': '+9','GMP': '+9',
+                'SIN': '+8','KUL': '+8','CGK': '+7','MNL': '+8',
+                'TPE': '+8','KHH': '+8','HKG': '+8','MFM': '+8',
+                'DEL': '+5.5','BOM': '+5.5','MAA': '+5.5','BLR': '+5.5',
+                'LHR': '+0','LGW': '+0','CDG': '+1','FRA': '+1','AMS': '+1','FCO': '+1','MAD': '+1',
+                'JFK': '-5','LAX': '-8','SFO': '-8','ORD': '-6','MIA': '-5','BOS': '-5','SEA': '-8',
+                'DXB': '+4','AUH': '+4','DOH': '+3','IST': '+3',
+                'SYD': '+10','MEL': '+10','BNE': '+10','AKL': '+12'
+            };
+            const tz = tzMap[iataCode.toUpperCase()];
+            if (tz) {
+                const sel = document.getElementById(tzSelectId);
+                if (sel) {
+                    // Find matching option
+                    for (let i = 0; i < sel.options.length; i++) {
+                        if (sel.options[i].value === tz) { sel.selectedIndex = i; break; }
+                    }
+                }
+            }
         }
 
         // Submit Logic
@@ -1963,7 +3213,7 @@
                     meta: existing ? { ...(existing.meta || {}) } : {}
                 };
 
-                let returnRecord = null; // For round-trip flights
+                let staleLegacyReturnRecord = existing ? findLegacyReturnRecord(existing) : null;
 
                 if (type === 'expense') {
                     record.category = currentCategory;
@@ -1975,20 +3225,118 @@
                         submitBtn.textContent = editingBillId ? '更新记录' : '保存记录';
                         return showAlert('错误', '需至少一人分摊', 'error');
                     }
+                    // Category-specific meta
+                    if (currentCategory === 'transport') {
+                        record.meta = { ...(record.meta || {}),
+                            transportType: document.getElementById('transport-type')?.value || '',
+                            transportFrom: document.getElementById('transport-from')?.value?.trim() || '',
+                            transportTo: document.getElementById('transport-to')?.value?.trim() || '',
+                            transportTime: document.getElementById('transport-time')?.value || '',
+                            transportPhoto: document.getElementById('transport-photo')?.value?.trim() || ''
+                        };
+                        const tf = document.getElementById('transport-from')?.value, tt = document.getElementById('transport-to')?.value;
+                        if (tf && tt) record.desc = tf + ' → ' + tt;
+                    } else if (currentCategory === 'food') {
+                        record.meta = { ...(record.meta || {}),
+                            diningName: document.getElementById('dining-name')?.value?.trim() || '',
+                            mealType: document.getElementById('dining-meal-type')?.value || '',
+                            diners: parseInt(document.getElementById('dining-diners')?.value) || 0,
+                            diningRating: document.getElementById('dining-rating')?.value?.trim() || ''
+                        };
+                        const dn = document.getElementById('dining-name')?.value?.trim();
+                        if (dn) record.desc = dn;
+                        if (record.meta.diners) record.desc += ' · ' + record.meta.diners + '人';
+                    } else if (currentCategory === 'tickets') {
+                        const an = document.getElementById('attraction-name')?.value?.trim();
+                        const pp = parseFloat(document.getElementById('attraction-price-per')?.value) || 0;
+                        const pc = parseInt(document.getElementById('attraction-people')?.value) || 1;
+                        record.meta = { ...(record.meta || {}),
+                            attractionName: an || '',
+                            attractionTime: document.getElementById('attraction-time')?.value || '',
+                            pricePerPerson: pp, attractionPeople: pc,
+                            attractionPhoto: document.getElementById('attraction-photo')?.value?.trim() || ''
+                        };
+                        if (an) record.desc = an;
+                        if (pp && pc) { record.amount = pp * pc; record.baseAmount = record.amount * fxRate; }
+                    }
                 } else if (type === 'itinerary') {
-                    const itType = document.querySelector('input[name="itinerary-type"]:checked').value;
+                    const itType = document.querySelector('input[name="itinerary-type"]').value;
                     record.itineraryType = itType;
                     record.category = itType;
-                    record.desc = document.getElementById('itinerary-title').value || (itType === 'flight'?'未命名航班':'未命名酒店');
-                    record.note = document.getElementById('input-desc').value;
-                    record.itineraryStart = document.getElementById('itinerary-start').value;
-                    record.itineraryEnd = document.getElementById('itinerary-end').value;
-                    if(!record.itineraryStart) {
-                        submitBtn.disabled = false;
-                        submitBtn.textContent = editingBillId ? '更新记录' : '保存记录';
-                        return showAlert('错误', '必须选择去程时间', 'error');
+
+                    if (itType === 'flight') {
+                        // === FLIGHT: collect all new fields ===
+                        record.desc = document.getElementById('itinerary-title').value || '未命名航班';
+                        record.note = document.getElementById('input-desc').value;
+                        record.itineraryStart = document.getElementById('itinerary-start').value;
+                        record.itineraryEnd = document.getElementById('itinerary-end').value;
+                        if(!record.itineraryStart) {
+                            submitBtn.disabled = false;
+                            submitBtn.textContent = editingBillId ? '更新记录' : '保存记录';
+                            return showAlert('错误', '必须选择出发时间', 'error');
+                        }
+                        record.timestamp = safeDate(record.itineraryStart).toISOString();
+
+                        // Save flight-specific meta
+                        record.meta = {
+                            ...(record.meta || {}),
+                            from: normalizeAirportIATA(document.getElementById('flight-from')?.value) || document.getElementById('flight-from')?.value?.trim().toUpperCase() || '',
+                            to: normalizeAirportIATA(document.getElementById('flight-to')?.value) || document.getElementById('flight-to')?.value?.trim().toUpperCase() || '',
+                            fromTz: document.getElementById('flight-from-tz')?.value || '+8',
+                            toTz: document.getElementById('flight-to-tz')?.value || '+9',
+                            cabin: document.getElementById('flight-cabin')?.value || 'economy',
+                            baggageFree: document.getElementById('flight-baggage-free')?.value?.trim() || '',
+                            baggageExcessFee: document.getElementById('flight-baggage-excess')?.value?.trim() || '',
+                            transitAirport: normalizeAirportIATA(document.getElementById('flight-transit-airport')?.value) || document.getElementById('flight-transit-airport')?.value?.trim().toUpperCase() || '',
+                            transitDuration: document.getElementById('flight-transit-duration')?.value?.trim() || '',
+                            platform: document.getElementById('flight-platform')?.value?.trim() || '',
+                            seatNo: document.getElementById('flight-seat-no')?.value?.trim() || '',
+                            ticketNo: document.getElementById('flight-ticket-no')?.value?.trim() || '',
+                            aircraftType: document.getElementById('flight-aircraft-type')?.value?.trim() || '',
+                            orderNo: document.getElementById('flight-order-no')?.value?.trim() || '',
+                            screenshot: document.getElementById('flight-screenshot')?.value?.trim() || ''
+                        };
+                    } else {
+                        // === HOTEL: collect all new fields ===
+                        record.desc = document.getElementById('hotel-name')?.value?.trim() || '未命名酒店';
+                        record.note = document.getElementById('input-desc').value;
+                        record.itineraryStart = document.getElementById('hotel-checkin')?.value || '';
+                        record.itineraryEnd = document.getElementById('hotel-checkout')?.value || '';
+                        if(!record.itineraryStart) {
+                            submitBtn.disabled = false;
+                            submitBtn.textContent = editingBillId ? '更新记录' : '保存记录';
+                            return showAlert('错误', '必须选择入住日期', 'error');
+                        }
+                        record.timestamp = safeDate(record.itineraryStart + 'T12:00:00').toISOString();
+                        record.location = document.getElementById('hotel-address')?.value?.trim() || '';
+
+                        // Auto-calculate amount from price/night × nights
+                        const priceNight = parseFloat(document.getElementById('hotel-price-night')?.value) || 0;
+                        const totalPrice = parseFloat(document.getElementById('hotel-price-total')?.value) || 0;
+                        if (priceNight > 0 && totalPrice > 0 && amount === 0) {
+                            // Use hotel total as the record amount if user didn't manually set amount
+                            record.amount = totalPrice;
+                            record.baseAmount = totalPrice * fxRate;
+                        }
+
+                        // Save hotel-specific meta
+                        record.meta = {
+                            ...(record.meta || {}),
+                            hotelName: record.desc,
+                            address: record.location,
+                            checkin: record.itineraryStart,
+                            checkout: record.itineraryEnd,
+                            pricePerNight: priceNight || '',
+                            platform: document.getElementById('hotel-platform')?.value || '',
+                            confirmationNo: document.getElementById('hotel-confirm-no')?.value?.trim() || '',
+                            breakfast: document.getElementById('hotel-breakfast')?.checked || false,
+                            nights: (() => {
+                                const ci = record.itineraryStart, co = record.itineraryEnd;
+                                if (ci && co) return Math.max(0, Math.round((new Date(co) - new Date(ci)) / 86400000));
+                                return 0;
+                            })()
+                        };
                     }
-                    record.timestamp = safeDate(record.itineraryStart).toISOString();
                     
                     record.payer = document.getElementById('modal-payer').value;
                     record.participants = Array.from(document.querySelectorAll('input[name="split-participants"]:checked')).map(cb => cb.value);
@@ -1997,37 +3345,59 @@
                         submitBtn.textContent = editingBillId ? '更新记录' : '保存记录';
                         return showAlert('错误', '需至少一人分摊', 'error');
                     }
-                    record = await enrichFlightRecord(record);
 
-                    // Round-trip: create return record as well
-                    if (itType === 'flight' && !editingBillId) {
-                        const roundtripRadio = document.querySelector('input[name="flight-trip-type"][value="roundtrip"]');
-                        if (roundtripRadio && roundtripRadio.checked) {
+                    if (itType === 'flight') {
+                        record = await enrichFlightRecord(record);
+
+                        const isRoundtrip = document.querySelector('input[name="flight-trip-type"]').value === 'roundtrip';
+                        if (isRoundtrip) {
                             const retTitle = document.getElementById('itinerary-return-title')?.value?.trim();
                             const retStart = document.getElementById('itinerary-return-start')?.value;
                             const retEnd = document.getElementById('itinerary-return-end')?.value;
-                            if (retStart) {
-                                returnRecord = {
-                                    id: (Date.now() + 1).toString(),
-                                    type: 'itinerary',
-                                    amount: amount,
-                                    currency: curr,
-                                    fxRate: fxRate,
-                                    baseAmount: baseAmount,
-                                    desc: retTitle || '返程航班',
-                                    note: document.getElementById('input-desc').value,
-                                    timestamp: safeDate(retStart).toISOString(),
-                                    location: record.location,
-                                    meta: { ...(record.meta || {}), isReturn: true },
-                                    itineraryType: 'flight',
-                                    category: 'flight',
-                                    itineraryStart: retStart,
-                                    itineraryEnd: retEnd || retStart,
-                                    payer: record.payer,
-                                    participants: [...record.participants]
-                                };
-                                returnRecord = await enrichFlightRecord(returnRecord);
+                            if (!retStart) {
+                                submitBtn.disabled = false;
+                                submitBtn.textContent = editingBillId ? '更新记录' : '保存记录';
+                                return showAlert('错误', '往返行程必须选择返程出发时间', 'error');
                             }
+                            let returnFlightRecord = {
+                                id: `${record.id}-return`,
+                                type: 'itinerary',
+                                amount: amount,
+                                currency: curr,
+                                fxRate: fxRate,
+                                baseAmount: baseAmount,
+                                desc: retTitle || '返程航班',
+                                note: document.getElementById('input-desc').value,
+                                timestamp: safeDate(retStart).toISOString(),
+                                location: record.location,
+                                meta: {
+                                    from: document.getElementById('flight-return-from')?.value?.trim().toUpperCase() || '',
+                                    to: document.getElementById('flight-return-to')?.value?.trim().toUpperCase() || '',
+                                    fromTz: record.meta?.toTz || '+9',
+                                    toTz: record.meta?.fromTz || '+8',
+                                    cabin: document.getElementById('flight-return-cabin')?.value || 'economy',
+                                    baggageFree: record.meta?.baggageFree || '',
+                                    baggageExcessFee: record.meta?.baggageExcessFee || '',
+                                    platform: record.meta?.platform || '',
+                                    orderNo: record.meta?.orderNo || '',
+                                    screenshot: record.meta?.screenshot || ''
+                                },
+                                itineraryType: 'flight',
+                                category: 'flight',
+                                itineraryStart: retStart,
+                                itineraryEnd: retEnd || retStart,
+                                payer: record.payer,
+                                participants: [...record.participants]
+                            };
+                            returnFlightRecord = await enrichFlightRecord(returnFlightRecord);
+                            record.meta.returnFlight = {
+                                desc: returnFlightRecord.desc,
+                                itineraryStart: returnFlightRecord.itineraryStart,
+                                itineraryEnd: returnFlightRecord.itineraryEnd,
+                                meta: returnFlightRecord.meta || {}
+                            };
+                        } else {
+                            delete record.meta.returnFlight;
                         }
                     }
                 } else if (type === 'transfer') {
@@ -2045,9 +3415,11 @@
                     const idx = bills.findIndex(b => b.id === editingBillId);
                     if (idx >= 0) bills[idx] = record;
                     else bills.push(record);
+                    if (staleLegacyReturnRecord) {
+                        bills = bills.filter(b => String(b.id) !== String(staleLegacyReturnRecord.id));
+                    }
                 } else {
                     bills.push(record);
-                    if (returnRecord) bills.push(returnRecord);
                 }
 
                 saveData();
@@ -2055,9 +3427,9 @@
                 if (cloudReady()) {
                     try {
                         cloudSynced = await withTimeout(upsertCloudBill(record, { silent: true }), 12000, '云端同步超时');
-                        if (returnRecord) {
-                            const returnSynced = await withTimeout(upsertCloudBill(returnRecord, { silent: true }), 12000, '云端同步超时');
-                            cloudSynced = cloudSynced && returnSynced;
+                        if (staleLegacyReturnRecord) {
+                            const returnDeleted = await withTimeout(deleteCloudBill(staleLegacyReturnRecord.id, { silent: true }), 12000, '云端同步超时');
+                            cloudSynced = cloudSynced && returnDeleted;
                         }
                     } catch (syncErr) {
                         rememberCloudError(syncErr, '云端同步超时');
@@ -2102,10 +3474,12 @@
             const record = bills.find(b => b.id === id);
             if (!record) return;
             showConfirm('删除记录', `确定删除「${record.desc || '这条记录'}」吗？`, () => {
-                bills = bills.filter(b => b.id !== id);
+                const linkedReturnRecord = findLegacyReturnRecord(record);
+                bills = bills.filter(b => b.id !== id && (!linkedReturnRecord || String(b.id) !== String(linkedReturnRecord.id)));
                 if (editingBillId === id) editingBillId = null;
                 saveData();
                 deleteCloudBill(id, { silent: true });
+                if (linkedReturnRecord) deleteCloudBill(linkedReturnRecord.id, { silent: true });
                 renderHome();
                 renderSettlement();
             });
@@ -2115,12 +3489,13 @@
         function renderSettlement() {
             const res = document.getElementById('settlement-results');
             const balList = document.getElementById('balances-list');
+            const settlementBills = bills.filter(b => !shouldSkipLegacyReturnRecord(b));
             const allMembers = normalizeMembers([
                 ...members,
-                ...bills.flatMap(b => [b.payer, b.receiver, ...(b.participants || [])])
+                ...settlementBills.flatMap(b => [b.payer, b.receiver, ...(b.participants || [])])
             ]);
             
-            if(bills.length === 0 || allMembers.length < 2) {
+            if(settlementBills.length === 0 || allMembers.length < 2) {
                 res.innerHTML = '<div class="text-center py-6 font-bold text-gray-400">无需结算</div>';
                 balList.innerHTML = '';
                 return;
@@ -2129,7 +3504,7 @@
             let balances = {}; allMembers.forEach(m => balances[m] = 0);
             
             // Calculate Net using baseAmount (CNY) ONLY
-            bills.forEach(b => {
+            settlementBills.forEach(b => {
                 const amt = Number(b.baseAmount || 0);
                 if (!amt) return;
                 if (b.type === 'transfer') {
@@ -2211,6 +3586,31 @@
         document.getElementById('btn-cloud-create').addEventListener('click', () => createOrUpdateCloudTrip());
         document.getElementById('btn-cloud-pull').addEventListener('click', () => pullCloudTrip());
         document.getElementById('btn-cloud-join').addEventListener('click', joinCloudTrip);
+
+        // --- Flight API Key Management ---
+        function loadApiKeysToForm() {
+            setVal('api-key-aviationstack', localStorage.getItem('aviationstack_api_key') === '__skipped__' ? '' : (localStorage.getItem('aviationstack_api_key') || ''));
+            setVal('api-key-airlabs', localStorage.getItem('airlabs_api_key') === '__skipped__' ? '' : (localStorage.getItem('airlabs_api_key') || ''));
+        }
+        document.getElementById('btn-api-save').addEventListener('click', () => {
+            const avKey = document.getElementById('api-key-aviationstack')?.value?.trim();
+            const alKey = document.getElementById('api-key-airlabs')?.value?.trim();
+            if (avKey) localStorage.setItem('aviationstack_api_key', avKey);
+            else localStorage.setItem('aviationstack_api_key', '__skipped__');
+            if (alKey) localStorage.setItem('airlabs_api_key', alKey);
+            else localStorage.setItem('airlabs_api_key', '__skipped__');
+            showAlert('已保存', '航班 API Key 已更新，查询时将自动使用。', 'info');
+        });
+        document.getElementById('btn-api-clear').addEventListener('click', () => {
+            localStorage.setItem('aviationstack_api_key', '__skipped__');
+            localStorage.setItem('airlabs_api_key', '__skipped__');
+            setVal('api-key-aviationstack', '');
+            setVal('api-key-airlabs', '');
+            showAlert('已清除', 'API Key 已清除，查询航班时将仅使用本地航司库。', 'info');
+        });
+        // Load keys when cloud modal opens
+        const origCloudSyncClick = document.getElementById('btn-cloud-sync').onclick;
+        document.getElementById('btn-cloud-sync').addEventListener('click', loadApiKeysToForm);
 
         function renderMembersSetup() {
             document.getElementById('members-list').innerHTML = members.map(m => `
@@ -2306,5 +3706,6 @@
         }
 
     </script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </body>
 </html>

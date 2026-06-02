@@ -50,6 +50,13 @@ create table if not exists public.bills (
   primary key (trip_id, id)
 );
 
+-- Shared flight info cache (cross-device, cross-user)
+create table if not exists public.flight_cache (
+  flight_no text primary key,
+  data jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
@@ -199,10 +206,29 @@ create policy "bills_delete_members"
 on public.bills for delete
 using (public.is_trip_member(trip_id));
 
+-- Flight cache: any authenticated user can read/write (shared knowledge base)
+alter table public.flight_cache enable row level security;
+drop policy if exists "flight_cache_select_auth" on public.flight_cache;
+create policy "flight_cache_select_auth"
+on public.flight_cache for select
+using (auth.role() = 'authenticated');
+
+drop policy if exists "flight_cache_insert_auth" on public.flight_cache;
+create policy "flight_cache_insert_auth"
+on public.flight_cache for insert
+with check (auth.role() = 'authenticated');
+
+drop policy if exists "flight_cache_update_auth" on public.flight_cache;
+create policy "flight_cache_update_auth"
+on public.flight_cache for update
+using (auth.role() = 'authenticated')
+with check (auth.role() = 'authenticated');
+
 grant usage on schema public to authenticated;
 grant select, insert, update, delete on public.trips to authenticated;
 grant select, insert, update, delete on public.trip_members to authenticated;
 grant select, insert, update, delete on public.bills to authenticated;
+grant select, insert, update on public.flight_cache to authenticated;
 grant execute on function public.is_trip_member(uuid) to authenticated;
 grant execute on function public.join_trip_by_invite(text, text) to authenticated;
 

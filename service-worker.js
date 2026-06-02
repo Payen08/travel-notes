@@ -1,4 +1,4 @@
-const CACHE_NAME = 'travel-accounting-pwa-v7';
+const CACHE_NAME = 'travel-accounting-pwa-v9';
 const APP_SHELL = [
   './',
   './index.html',
@@ -26,6 +26,15 @@ self.addEventListener('activate', event => {
       .then(keys => Promise.all(keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))))
       .then(() => self.clients.claim())
   );
+});
+
+// Network-first for HTML, cache for assets
+self.addEventListener('fetch', event => {
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match(event.request))
+    );
+  }
 });
 
 self.addEventListener('fetch', event => {
