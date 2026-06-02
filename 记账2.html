@@ -59,11 +59,6 @@
             content: ''; position: absolute; top: 24px; bottom: -24px; left: 15px; width: 2px; background-color: #e5e7eb; z-index: 0;
         }
 
-        /* Budget Arc Transition */
-        #budget-progress {
-            transition: stroke-dashoffset 1s cubic-bezier(0.16, 1, 0.3, 1);
-        }
-
         /* Floating Nav */
         .nav-glass {
             background: rgba(255, 255, 255, 0.9);
@@ -140,18 +135,16 @@
                 </div>
             </div>
 
-            <!-- Budget Arc Card -->
-            <div class="bg-white rounded-[28px] p-5 shadow-sm mb-7 flex flex-col items-center relative">
-                <div class="w-full flex justify-between items-center mb-[-20px] relative z-10">
+            <!-- Budget Progress Bar -->
+            <div class="bg-white rounded-[28px] p-5 shadow-sm mb-7">
+                <div class="flex justify-between items-center mb-3">
                     <span class="font-bold text-textMain">预算进度</span>
                     <span class="text-sm font-bold text-gray-400" id="budget-percent-text">0%</span>
                 </div>
-                <svg viewBox="0 0 100 50" class="w-48 h-24 overflow-visible mt-4">
-                    <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="#f3f4f6" stroke-width="8" stroke-linecap="round" />
-                    <!-- Length of semi-circle is approx 125.6. Dasharray 125.6 -->
-                    <path id="budget-progress" d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="#34c759" stroke-width="8" stroke-linecap="round" stroke-dasharray="125.6" stroke-dashoffset="125.6" />
-                </svg>
-                <div class="flex w-full justify-between mt-2 border-t border-gray-100 pt-4">
+                <div class="w-full h-3 bg-gray-100 rounded-full overflow-hidden">
+                    <div id="budget-progress" class="h-full bg-success rounded-full transition-all duration-500" style="width: 0%"></div>
+                </div>
+                <div class="flex justify-between mt-3">
                     <div class="text-center">
                         <div class="text-lg font-bold text-textMain" id="arc-spent">0.00</div>
                         <div class="text-[10px] text-gray-400 font-bold uppercase">已用</div>
@@ -1677,8 +1670,8 @@
             if (meta.airline) add('航司', escapeHTML(meta.airline));
             add('舱位', cabinLabel[meta.cabin] || meta.cabin || '经济舱');
             add('总票价', amountStr);
-            const depTime = meta.depScheduled || bill.itineraryStart || '';
-            const arrTime = meta.arrScheduled || bill.itineraryEnd || '';
+            const depTime = bill.itineraryStart || meta.depScheduled || '';
+            const arrTime = bill.itineraryEnd || meta.arrScheduled || '';
             const fromTz = effectiveFlightTimezone(meta.from, meta.fromTz);
             const toTz = effectiveFlightTimezone(meta.to, meta.toTz);
             if (depTime) add('出发时间', `${flightTimeLabel(depTime)}${fromTz ? ' (UTC' + fromTz + ')' : ''}`);
@@ -1703,8 +1696,8 @@
                 const rm = returnFlight.meta || {};
                 const rFrom = airportDisplay(normalizeAirportIATA(rm.from) || rm.from || '--');
                 const rTo = airportDisplay(normalizeAirportIATA(rm.to) || rm.to || '--');
-                const rDep = rm.depScheduled || returnFlight.itineraryStart || '';
-                const rArr = rm.arrScheduled || returnFlight.itineraryEnd || '';
+                const rDep = returnFlight.itineraryStart || rm.depScheduled || '';
+                const rArr = returnFlight.itineraryEnd || rm.arrScheduled || '';
                 const rFromTz = effectiveFlightTimezone(rm.from, rm.fromTz);
                 const rToTz = effectiveFlightTimezone(rm.to, rm.toTz);
                 returnHTML = `<div class="mt-4 pt-4 border-t-2 border-dashed border-gray-200"><div class="text-xs font-extrabold text-orange-500 uppercase tracking-wide mb-2">返程</div><div class="text-sm font-bold text-textMain">${escapeHTML(returnFlight.desc || rm.flightNo || '返程航班')}</div><div class="text-xs text-gray-500 mt-1">${rFrom} <i class="fas fa-arrow-right text-gray-300 mx-1"></i> ${rTo}</div><div class="text-xs text-gray-400 mt-0.5">${flightTimeLabel(rDep)} → ${flightTimeLabel(rArr)} · ${flightDurationLabel(rDep, rArr, '', rFromTz, rToTz)}</div></div>`;
@@ -2179,10 +2172,11 @@
             const meta = item.meta || {};
             const outbound = flightLegData(item);
             const returnFlight = normalizeReturnFlightPayload(meta.returnFlight);
+            const returnLeg = returnFlight ? flightLegData(item, returnFlight) : null;
             const sharedMeta = meta;
             const returnMeta = returnFlight ? (returnFlight.meta || {}) : {};
             const dateText = returnFlight
-                ? `${flightShortDateLabel(outbound.startValue)} - ${flightShortDateLabel(flightLegData(item, returnFlight).endValue || flightLegData(item, returnFlight).startValue || outbound.startValue)}`
+                ? `${flightShortDateLabel(outbound.startValue)} - ${flightShortDateLabel(returnLeg.startValue || returnLeg.endValue || outbound.startValue)}`
                 : flightDateLabel(outbound.startValue);
             const cabinLabel = { economy: '经济舱', business: '商务舱', first: '头等舱' };
             const platform = sharedMeta.platform || sharedMeta.bookingPlatform || returnMeta.platform || '';
@@ -2306,10 +2300,7 @@
             
             const pct = budget > 0 ? Math.min((totalSpentBase / budget) * 100, 100) : 0;
             document.getElementById('budget-percent-text').textContent = `${pct.toFixed(1)}%`;
-            
-            // Math for SVG arc (length 125.6)
-            const offset = 125.6 * (1 - (pct / 100));
-            document.getElementById('budget-progress').style.strokeDashoffset = offset;
+            document.getElementById('budget-progress').style.width = `${pct}%`;
             
             document.getElementById('arc-spent').textContent = formatMoney(totalSpentBase);
             document.getElementById('arc-remain').textContent = formatMoney(Math.max(budget - totalSpentBase, 0));
@@ -3065,6 +3056,13 @@
             }
 
             if (apiData && apiData.from) {
+                const requestedDate = record.itineraryStart ? record.itineraryStart.slice(0, 10) : '';
+                const depScheduled = apiData.depScheduled
+                    ? scheduleToDatetimeLocal(apiData.depScheduled, requestedDate)
+                    : '';
+                const arrScheduled = apiData.arrScheduled
+                    ? scheduleToDatetimeLocal(apiData.arrScheduled, requestedDate || flightInfoDate(apiData), apiData.depScheduled)
+                    : '';
                 // Merge API data into record meta
                 record.meta = {
                     ...(record.meta || {}),
@@ -3075,8 +3073,8 @@
                     toName: apiData.toName || record.meta.toName || '',
                     airline: apiData.airline || record.meta.airline || localAirline || '',
                     status: apiData.status || record.meta.status || '',
-                    depScheduled: apiData.depScheduled || record.meta.depScheduled || '',
-                    arrScheduled: apiData.arrScheduled || record.meta.arrScheduled || '',
+                    depScheduled: depScheduled || record.meta.depScheduled || '',
+                    arrScheduled: arrScheduled || record.meta.arrScheduled || '',
                     depTerminal: apiData.depTerminal || record.meta.depTerminal || '',
                     depGate: apiData.depGate || record.meta.depGate || '',
                     arrTerminal: apiData.arrTerminal || record.meta.arrTerminal || '',
@@ -3088,7 +3086,7 @@
                 record.desc = `${apiData.flightNo || flightNo} ${apiData.from} → ${apiData.to}`;
                 if (apiData.airline) record.desc += ` (${apiData.airline})`;
                 // Share to flight cache
-                cacheFlightInfo(flightNo, apiData);
+                cacheFlightInfo(flightNo, apiData, flightDate || flightInfoDate(apiData));
             } else {
                 record.meta._enriched = enriched;
             }
@@ -3182,11 +3180,39 @@
         function setFlightCache(cache) {
             try { localStorage.setItem('flightCache', JSON.stringify(cache)); } catch(e) {}
         }
-        function getCachedFlightLocal(flightNo) {
-            const cache = getFlightCache();
-            return cache[flightNo.toUpperCase()] || null;
+        function flightCacheKey(flightNo, flightDate = '') {
+            const no = String(flightNo || '').trim().toUpperCase();
+            const date = String(flightDate || '').trim();
+            return date ? `${no}@${date}` : no;
         }
-        async function getCachedFlightSupabase(flightNo) {
+        function flightInfoDate(info) {
+            const value = info && (info._flightDate || info.flightDate || info.depScheduled || info.dep_time || info.date);
+            const text = String(value || '').trim().replace(' ', 'T');
+            const match = text.match(/^(\d{4}-\d{2}-\d{2})/);
+            return match ? match[1] : '';
+        }
+        function flightInfoMatchesDate(info, flightDate) {
+            if (!flightDate) return true;
+            const cachedDate = flightInfoDate(info);
+            return !cachedDate || cachedDate === flightDate;
+        }
+        function normalizeFlightCacheData(data, flightDate = '') {
+            const date = flightDate || flightInfoDate(data);
+            return {
+                ...(data || {}),
+                _flightDate: date || ''
+            };
+        }
+        function getCachedFlightLocal(flightNo, flightDate = '') {
+            const cache = getFlightCache();
+            const exact = cache[flightCacheKey(flightNo, flightDate)];
+            if (exact && flightInfoMatchesDate(exact, flightDate)) return exact;
+
+            const legacy = cache[String(flightNo || '').trim().toUpperCase()];
+            if (legacy && flightInfoMatchesDate(legacy, flightDate)) return legacy;
+            return null;
+        }
+        async function getCachedFlightSupabase(flightNo, flightDate = '') {
             if (!cloudClient) return null;
             try {
                 const { data, error } = await cloudClient.from('flight_cache')
@@ -3196,42 +3222,45 @@
                     if (error.code === '406' || error.code === 'PGRST116') return null;
                     return null;
                 }
-                return data ? data.data : null;
+                const cached = data ? data.data : null;
+                return cached && flightInfoMatchesDate(cached, flightDate) ? cached : null;
             } catch(e) { return null; }
         }
-        async function getCachedFlight(flightNo) {
+        async function getCachedFlight(flightNo, flightDate = '') {
             // 1. Check localStorage (fast, offline)
-            const local = getCachedFlightLocal(flightNo);
+            const local = getCachedFlightLocal(flightNo, flightDate);
             if (local) return local;
             // 2. Check Supabase shared cache
-            const remote = await getCachedFlightSupabase(flightNo);
+            const remote = await getCachedFlightSupabase(flightNo, flightDate);
             if (remote) {
                 // Sync to localStorage for next time
-                cacheFlightInfoLocal(flightNo, remote);
+                cacheFlightInfoLocal(flightNo, remote, flightDate || flightInfoDate(remote));
                 return remote;
             }
             return null;
         }
-        function cacheFlightInfoLocal(flightNo, data) {
+        function cacheFlightInfoLocal(flightNo, data, flightDate = '') {
             const cache = getFlightCache();
-            cache[flightNo.toUpperCase()] = { ...data, _cachedAt: Date.now() };
+            const cached = { ...normalizeFlightCacheData(data, flightDate), _cachedAt: Date.now() };
+            cache[flightCacheKey(flightNo, cached._flightDate)] = cached;
+            if (!cached._flightDate) cache[flightCacheKey(flightNo)] = cached;
             const keys = Object.keys(cache).sort((a,b) => (cache[b]._cachedAt||0) - (cache[a]._cachedAt||0));
             if (keys.length > 50) keys.slice(50).forEach(k => delete cache[k]);
             setFlightCache(cache);
         }
-        async function cacheFlightInfoRemote(flightNo, data) {
+        async function cacheFlightInfoRemote(flightNo, data, flightDate = '') {
             if (!cloudClient) return;
             try {
                 await cloudClient.from('flight_cache').upsert({
                     flight_no: flightNo.toUpperCase(),
-                    data: data,
+                    data: normalizeFlightCacheData(data, flightDate),
                     updated_at: new Date().toISOString()
                 }, { onConflict: 'flight_no' });
             } catch(e) { /* silent */ }
         }
-        async function cacheFlightInfo(flightNo, data) {
-            cacheFlightInfoLocal(flightNo, data);       // local fast access
-            cacheFlightInfoRemote(flightNo, data);      // shared with friends & phone (fire-and-forget)
+        async function cacheFlightInfo(flightNo, data, flightDate = '') {
+            cacheFlightInfoLocal(flightNo, data, flightDate);       // local fast access
+            cacheFlightInfoRemote(flightNo, data, flightDate);      // shared with friends & phone (fire-and-forget)
         }
 
         // --- LOOKUP BUTTON: fetch flight info and auto-fill form ---
@@ -3247,10 +3276,15 @@
             if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 查询中'; }
 
             try {
+                // Use the date already selected in the form. Flight numbers repeat across dates,
+                // so cache/API results must not be treated as date-agnostic.
+                const dateInput = document.getElementById(isReturn ? 'itinerary-return-start' : 'itinerary-start');
+                const flightDate = dateInput?.value ? dateInput.value.slice(0, 10) : '';
+
                 // 1. Check cache (localStorage → Supabase shared)
-                const cached = await getCachedFlight(flightNo);
+                const cached = await getCachedFlight(flightNo, flightDate);
                 if (cached && cached.from) {
-                    fillFlightForm(which, cached);
+                    fillFlightForm(which, cached, { requestedDate: flightDate });
                     if (btn) { btn.disabled = false; btn.innerHTML = origHTML; }
                     setCloudMessage(`已加载 ${flightNo}（缓存：${cached.from}→${cached.to}）`, 'success');
                     return;
@@ -3258,10 +3292,6 @@
 
                 // 2. Try local airline name
                 const localAirline = getAirlineFromCode(flightNo);
-
-                // Get flight date from the form for better API results
-                const dateInput = document.getElementById(isReturn ? 'itinerary-return-start' : 'itinerary-start');
-                const flightDate = dateInput?.value ? dateInput.value.slice(0, 10) : '';
 
                 // 3. Try flight APIs (keys from cloud settings)
                 let enriched = null;
@@ -3280,8 +3310,8 @@
 
                 if (enriched && enriched.from) {
                     // Got full data from API
-                    cacheFlightInfo(flightNo, enriched);
-                    fillFlightForm(which, enriched);
+                    cacheFlightInfo(flightNo, enriched, flightDate || flightInfoDate(enriched));
+                    fillFlightForm(which, enriched, { requestedDate: flightDate });
                     if (btn) { btn.disabled = false; btn.innerHTML = origHTML; }
                     setCloudMessage(`已查询 ${flightNo}（${usedAPI}）：${enriched.from} → ${enriched.to}`, 'success');
                     return;
@@ -3289,7 +3319,7 @@
 
                 // No API data, fall back to local airline
                 if (localAirline) {
-                    cacheFlightInfo(flightNo, { flightNo, airline: localAirline });
+                    cacheFlightInfo(flightNo, { flightNo, airline: localAirline }, flightDate);
                     updateFlightFormAirline(which, localAirline);
                 }
                 if (btn) { btn.disabled = false; btn.innerHTML = origHTML; }
@@ -3303,17 +3333,64 @@
             }
         };
 
-        function fillFlightForm(which, info) {
+        function dateOnlyFromDatetime(value) {
+            const text = String(value || '').trim().replace(' ', 'T');
+            const direct = text.match(/^(\d{4}-\d{2}-\d{2})/);
+            if (direct) return direct[1];
+            const local = toDatetimeLocal(value);
+            const match = local.match(/^(\d{4}-\d{2}-\d{2})/);
+            return match ? match[1] : '';
+        }
+
+        function dateOnlyToUtcMs(dateStr) {
+            const match = String(dateStr || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (!match) return NaN;
+            return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+        }
+
+        function calendarDayDiff(startDate, endDate) {
+            const start = dateOnlyToUtcMs(startDate);
+            const end = dateOnlyToUtcMs(endDate);
+            if (Number.isNaN(start) || Number.isNaN(end)) return 0;
+            return Math.round((end - start) / 86400000);
+        }
+
+        function addDaysToDateOnly(dateStr, days) {
+            const base = dateOnlyToUtcMs(dateStr);
+            if (Number.isNaN(base)) return dateStr;
+            const next = new Date(base + days * 86400000);
+            return next.toISOString().slice(0, 10);
+        }
+
+        function scheduleToDatetimeLocal(value, requestedDate = '', sourceStart = '') {
+            const local = toDatetimeLocal(value);
+            if (!local || !requestedDate) return local;
+            const time = local.includes('T')
+                ? local.slice(11, 16)
+                : (local.match(/\d{2}:\d{2}/) || [''])[0];
+            if (!time) return local;
+            const sourceDate = dateOnlyFromDatetime(sourceStart || value);
+            const valueDate = dateOnlyFromDatetime(value);
+            const offsetDays = sourceStart && sourceDate && valueDate ? calendarDayDiff(sourceDate, valueDate) : 0;
+            return `${addDaysToDateOnly(requestedDate, offsetDays)}T${time}`;
+        }
+
+        function fillFlightForm(which, info, options = {}) {
             const isReturn = which === 'return';
             const fieldPrefix = isReturn ? 'flight-return-' : 'flight-';
             const timePrefix = isReturn ? 'itinerary-return-' : '';
+            const startId = timePrefix + 'itinerary-start';
+            const endId = timePrefix + 'itinerary-end';
+            const currentStart = document.getElementById(startId)?.value || '';
+            const requestedDate = options.requestedDate || dateOnlyFromDatetime(currentStart) || flightInfoDate(info);
             setVal(fieldPrefix + 'from', info.from || '');
             setVal(fieldPrefix + 'to', info.to || '');
             if (info.depScheduled) {
-                setVal(timePrefix + 'itinerary-start', toDatetimeLocal(info.depScheduled));
+                setVal(startId, scheduleToDatetimeLocal(info.depScheduled, requestedDate));
             }
             if (info.arrScheduled) {
-                setVal(timePrefix + 'itinerary-end', toDatetimeLocal(info.arrScheduled));
+                const filledStartDate = dateOnlyFromDatetime(document.getElementById(startId)?.value) || requestedDate;
+                setVal(endId, scheduleToDatetimeLocal(info.arrScheduled, filledStartDate, info.depScheduled));
             }
             // Auto-set timezone based on IATA codes (outbound only for now)
             if (!isReturn) {
