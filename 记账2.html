@@ -559,6 +559,11 @@
         let cloudTripId = localStorage.getItem('travel2CloudTripId') || '';
         let cloudSubscription = null;
         let cloudPullTimer = null;
+        let lastCloudError = '';
+        let isApplyingCloudData = false;
+        let lastLocalWriteAt = Number(localStorage.getItem('travel2LastLocalWriteAt') || 0);
+        let localDirtyAt = Number(localStorage.getItem('travel2LocalDirtyAt') || 0);
+        let suppressCloudPullUntil = 0;
 
         migrateLegacyAccountingData();
         normalizeBills();
@@ -648,10 +653,38 @@
             saveData();
         }
 
-        function saveData() {
+        function markLocalWrite() {
+            const now = Date.now();
+            lastLocalWriteAt = now;
+            localDirtyAt = now;
+            suppressCloudPullUntil = Math.max(suppressCloudPullUntil, now + 8000);
+            localStorage.setItem('travel2LastLocalWriteAt', String(lastLocalWriteAt));
+            localStorage.setItem('travel2LocalDirtyAt', String(localDirtyAt));
+        }
+
+        function markCloudSynced() {
+            localDirtyAt = 0;
+            localStorage.removeItem('travel2LocalDirtyAt');
+        }
+
+        function saveData({ fromCloud = false } = {}) {
+            if (!fromCloud && !isApplyingCloudData) markLocalWrite();
             localStorage.setItem('tripData', JSON.stringify(tripData));
             localStorage.setItem('travelMembers', JSON.stringify(members));
             localStorage.setItem('travelBills', JSON.stringify(bills));
+        }
+
+        function rememberCloudError(error, fallback = '云端同步失败') {
+            lastCloudError = error && error.message ? error.message : String(error || fallback);
+            return lastCloudError;
+        }
+
+        function withTimeout(promise, ms, label) {
+            let timer;
+            const timeout = new Promise((_, reject) => {
+                timer = setTimeout(() => reject(new Error(label)), ms);
+            });
+            return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
         }
 
         function normalizeSupabaseUrl(value) {
@@ -713,7 +746,7 @@
                 || '我';
         }
 
-        function ensureAccountInMembers({ persist = false } = {}) {
+        function ensureAccountInMembers({ persist = false, markDirty = true } = {}) {
             if (!cloudSession) return false;
             const accountName = cloudDisplayName();
             if (!accountName) return false;
@@ -721,7 +754,7 @@
             const changed = nextMembers.length !== members.length || nextMembers.some((m, index) => m !== members[index]);
             if (changed) {
                 members = nextMembers;
-                if (persist) saveData();
+                if (persist) saveData({ fromCloud: !markDirty });
             }
             return changed;
         }
@@ -802,12 +835,12 @@
             cloudClient = window.supabase.createClient(cloudSettings.url, cloudSettings.anonKey);
             const { data } = await cloudClient.auth.getSession();
             cloudSession = data && data.session ? data.session : null;
-            if (cloudSession) ensureAccountInMembers({ persist: true });
+            if (cloudSession) ensureAccountInMembers({ persist: true, markDirty: false });
             renderCloudState();
 
             cloudClient.auth.onAuthStateChange(async (_event, session) => {
                 cloudSession = session;
-                if (cloudSession) ensureAccountInMembers({ persist: true });
+                if (cloudSession) ensureAccountInMembers({ persist: true, markDirty: false });
                 renderCloudState();
                 if (cloudSession && cloudTripId) {
                     subscribeCloudTrip();
@@ -923,7 +956,7 @@
             if (error) return showAlert('登录失败', cloudAuthErrorMessage(error.message), 'error');
             cloudSession = data.session || null;
             localStorage.setItem('travel2CloudDisplayName', cloudDisplayName());
-            ensureAccountInMembers({ persist: true });
+            ensureAccountInMembers({ persist: true, markDirty: !cloudTripId });
             renderCloudState();
             if (cloudTripId) await pullCloudTrip({ silent: true });
             else setupAddForm();
@@ -982,12 +1015,27 @@
 
         async function upsertCloudMembership(role = 'owner') {
             if (!cloudReady()) return;
-            await cloudClient.from('trip_members').upsert({
+            const { error } = await cloudClient.from('trip_members').upsert({
                 trip_id: cloudTripId,
                 user_id: cloudSession.user.id,
                 display_name: cloudDisplayName(),
                 role
             }, { onConflict: 'trip_id,user_id' });
+            if (error) {
+                rememberCloudError(error, '成员身份同步失败');
+                return false;
+            }
+            return true;
+        }
+
+        async function currentCloudTripRole() {
+            if (!cloudClient || !cloudSession || !cloudTripId) return 'member';
+            const { data, error } = await cloudClient.from('trips').select('owner_id').eq('id', cloudTripId).single();
+            if (error) {
+                rememberCloudError(error, '读取旅程权限失败');
+                return 'member';
+            }
+            return data && data.owner_id === cloudSession.user.id ? 'owner' : 'member';
         }
 
         async function loadCloudInvite() {
@@ -1000,6 +1048,7 @@
         }
 
         async function createOrUpdateCloudTrip({ silent = false } = {}) {
+            lastCloudError = '';
             if (!cloudClient || !cloudSession) {
                 if (!silent) showAlert('未登录', '请先登录云端账号。', 'error');
                 return false;
@@ -1014,6 +1063,7 @@
                     .select('id, invite_code')
                     .single();
                 if (error) {
+                    rememberCloudError(error, '创建云端旅程失败');
                     if (!silent) showAlert('创建失败', error.message, 'error');
                     return false;
                 }
@@ -1022,17 +1072,28 @@
                 if (data.invite_code) localStorage.setItem('travel2InviteCode', data.invite_code);
                 createdNewTrip = true;
             } else {
+                const role = await currentCloudTripRole();
+                if (role === 'owner') await upsertCloudMembership('owner');
                 const { error } = await cloudClient.from('trips').update(tripPayload()).eq('id', cloudTripId);
                 if (error) {
+                    rememberCloudError(error, '更新云端旅程失败');
                     if (!silent) showAlert('更新失败', error.message, 'error');
                     return false;
                 }
             }
 
-            if (createdNewTrip) await upsertCloudMembership('owner');
-            await pushAllBillsToCloud({ silent: true });
+            if (createdNewTrip) {
+                const membershipSynced = await upsertCloudMembership('owner');
+                if (!membershipSynced) {
+                    if (!silent) showAlert('同步失败', lastCloudError || '成员身份写入失败。', 'error');
+                    return false;
+                }
+            }
+            const billsSynced = await pushAllBillsToCloud({ silent });
+            if (!billsSynced) return false;
             await loadCloudInvite();
             subscribeCloudTrip();
+            markCloudSynced();
             if (!silent) showAlert('已同步', '本地旅程和账单已上传到 Supabase。', 'info');
             return true;
         }
@@ -1042,6 +1103,7 @@
             if (!bills.length) return true;
             const { error } = await cloudClient.from('bills').upsert(bills.map(billToCloud), { onConflict: 'trip_id,id' });
             if (error) {
+                rememberCloudError(error, '账单上传失败');
                 if (!silent) showAlert('上传失败', error.message, 'error');
                 return false;
             }
@@ -1050,10 +1112,16 @@
         }
 
         async function upsertCloudBill(record, { silent = false } = {}) {
+            lastCloudError = '';
             if (!cloudReady()) return false;
             const { error } = await cloudClient.from('bills').upsert(billToCloud(record), { onConflict: 'trip_id,id' });
-            if (error && !silent) showAlert('同步失败', error.message, 'error');
-            return !error;
+            if (error) {
+                rememberCloudError(error, '账单同步失败');
+                if (!silent) showAlert('同步失败', error.message, 'error');
+                return false;
+            }
+            markCloudSynced();
+            return true;
         }
 
         async function deleteCloudBill(id, { silent = false } = {}) {
@@ -1064,15 +1132,21 @@
         }
 
         async function pullCloudTrip({ silent = false } = {}) {
+            const pullStartedAt = Date.now();
+            if (silent && (localDirtyAt > 0 || pullStartedAt < lastLocalWriteAt || Date.now() < suppressCloudPullUntil)) {
+                return false;
+            }
             if (!cloudReady()) return false;
             const { data: trip, error: tripError } = await cloudClient.from('trips').select('*').eq('id', cloudTripId).single();
             if (tripError) {
+                rememberCloudError(tripError, '旅程拉取失败');
                 if (!silent) showAlert('拉取失败', tripError.message, 'error');
                 return false;
             }
 
             const { data: cloudBills, error: billError } = await cloudClient.from('bills').select('*').eq('trip_id', cloudTripId).order('timestamp', { ascending: false });
             if (billError) {
+                rememberCloudError(billError, '账单拉取失败');
                 if (!silent) showAlert('拉取失败', billError.message, 'error');
                 return false;
             }
@@ -1082,33 +1156,39 @@
                 .select('display_name')
                 .eq('trip_id', cloudTripId);
 
-            tripData = {
-                ...tripData,
-                name: trip.name || tripData.name,
-                budget: Number(trip.budget || tripData.budget || 0),
-                baseCurrency: trip.base_currency || BASE_CURRENCY,
-                foreignCurrency: trip.foreign_currency || tripData.foreignCurrency || 'THB',
-                rate: Number(trip.rate || tripData.rate || 1),
-                categoryBudgets: trip.category_budgets || {}
-            };
-            const tripMembers = Array.isArray(trip.members) ? trip.members : [];
-            const cloudMemberNames = (cloudMemberRows || []).map(row => row.display_name);
-            const billMemberNames = (cloudBills || []).flatMap(row => [
-                row.payer,
-                row.receiver,
-                ...(Array.isArray(row.participants) ? row.participants : [])
-            ]);
-            members = normalizeMembers([cloudDisplayName(), ...tripMembers, ...cloudMemberNames, ...billMemberNames, ...members]);
-            bills = (cloudBills || []).map(cloudToBill);
-            normalizeBills();
-            ensureAccountInMembers();
-            if (trip.invite_code) localStorage.setItem('travel2InviteCode', trip.invite_code);
-            saveData();
-            initHeader();
-            renderHome();
-            renderSettlement();
-            setupAddForm();
-            renderCloudState();
+            isApplyingCloudData = true;
+            try {
+                tripData = {
+                    ...tripData,
+                    name: trip.name || tripData.name,
+                    budget: Number(trip.budget || tripData.budget || 0),
+                    baseCurrency: trip.base_currency || BASE_CURRENCY,
+                    foreignCurrency: trip.foreign_currency || tripData.foreignCurrency || 'THB',
+                    rate: Number(trip.rate || tripData.rate || 1),
+                    categoryBudgets: trip.category_budgets || {}
+                };
+                const tripMembers = Array.isArray(trip.members) ? trip.members : [];
+                const cloudMemberNames = (cloudMemberRows || []).map(row => row.display_name);
+                const billMemberNames = (cloudBills || []).flatMap(row => [
+                    row.payer,
+                    row.receiver,
+                    ...(Array.isArray(row.participants) ? row.participants : [])
+                ]);
+                members = normalizeMembers([cloudDisplayName(), ...tripMembers, ...cloudMemberNames, ...billMemberNames, ...members]);
+                bills = (cloudBills || []).map(cloudToBill);
+                normalizeBills();
+                ensureAccountInMembers();
+                if (trip.invite_code) localStorage.setItem('travel2InviteCode', trip.invite_code);
+                saveData({ fromCloud: true });
+                if (!silent) markCloudSynced();
+                initHeader();
+                renderHome();
+                renderSettlement();
+                setupAddForm();
+                renderCloudState();
+            } finally {
+                isApplyingCloudData = false;
+            }
             if (!silent) showAlert('已拉取', '云端数据已同步到本机。', 'info');
             return true;
         }
@@ -1971,8 +2051,19 @@
                 }
 
                 saveData();
-                await upsertCloudBill(record, { silent: true });
-                if (returnRecord) await upsertCloudBill(returnRecord, { silent: true });
+                let cloudSynced = true;
+                if (cloudReady()) {
+                    try {
+                        cloudSynced = await withTimeout(upsertCloudBill(record, { silent: true }), 12000, '云端同步超时');
+                        if (returnRecord) {
+                            const returnSynced = await withTimeout(upsertCloudBill(returnRecord, { silent: true }), 12000, '云端同步超时');
+                            cloudSynced = cloudSynced && returnSynced;
+                        }
+                    } catch (syncErr) {
+                        rememberCloudError(syncErr, '云端同步超时');
+                        cloudSynced = false;
+                    }
+                }
                 document.getElementById('location-text').textContent = '获取定位';
                 document.getElementById('btn-location').classList.remove('text-primary', 'bg-primary/10');
                 editingBillId = null;
@@ -1988,6 +2079,10 @@
                 }
                 
                 showView('home');
+                if (!cloudSynced) {
+                    setCloudMessage('本地已保存，但云端同步失败。请检查 Supabase 权限后点创建/上传。', 'error');
+                    showAlert('本地已保存', lastCloudError || '云端同步失败，朋友暂时看不到这条记录。', 'error');
+                }
             } catch (err) {
                 console.error('Save failed:', err);
                 showAlert('保存失败', err.message || '保存时出错，请重试。', 'error');
@@ -2168,13 +2263,25 @@
                 tripData.categoryBudgets = tripData.categoryBudgets || {};
                 saveData();
 
-                // Await cloud sync so errors are properly caught
-                await createOrUpdateCloudTrip({ silent: true });
+                let cloudSynced = true;
+                if (cloudReady()) {
+                    try {
+                        cloudSynced = await withTimeout(createOrUpdateCloudTrip({ silent: true }), 12000, '云端同步超时');
+                    } catch (syncErr) {
+                        rememberCloudError(syncErr, '云端同步超时');
+                        cloudSynced = false;
+                    }
+                }
 
                 initHeader();
                 renderHome();
                 setupAddForm();
-                hideModal('members-modal');
+                if (cloudSynced) {
+                    hideModal('members-modal');
+                } else {
+                    setCloudMessage('本地设置已保存，但云端同步失败。朋友会暂时看到旧数据。', 'error');
+                    showAlert('本地已保存', lastCloudError || '云端同步失败，请检查 Supabase 权限后再试。', 'error');
+                }
             } catch (err) {
                 showAlert('保存失败', err.message || '保存设置时出错，请重试。', 'error');
             } finally {
