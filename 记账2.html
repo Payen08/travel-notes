@@ -298,13 +298,13 @@
                             <div id="flight-more" class="hidden space-y-2 mt-2 pt-2 border-t border-gray-100">
                                 <div class="text-[10px] font-extrabold text-gray-400 uppercase tracking-wide">行李规则</div>
                                 <div class="flex gap-2">
-                                    <input type="text" id="flight-baggage-free" placeholder="免费额度 (如 23kg×2)" class="flex-1 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
-                                    <input type="text" id="flight-baggage-excess" placeholder="超重费" class="flex-1 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
+                                    <input type="text" id="flight-baggage-free" placeholder="免费额度 (如 23kg×2)" class="min-w-0 flex-1 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
+                                    <input type="text" id="flight-baggage-excess" placeholder="超重费" class="min-w-0 flex-1 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
                                 </div>
                                 <div class="text-[10px] font-extrabold text-gray-400 uppercase tracking-wide mt-1">中转信息</div>
                                 <div class="flex gap-2">
-                                    <input type="text" id="flight-transit-airport" placeholder="中转机场 (如 ICN)" class="flex-1 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none uppercase">
-                                    <input type="text" id="flight-transit-duration" placeholder="停留时长 (如 2h30m)" class="flex-1 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
+                                    <input type="text" id="flight-transit-airport" placeholder="中转机场 (如 ICN)" class="min-w-0 flex-1 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none uppercase">
+                                    <input type="text" id="flight-transit-duration" placeholder="停留时长 (如 2h30m)" class="min-w-0 flex-1 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
                                 </div>
                                 <div class="text-[10px] font-extrabold text-gray-400 uppercase tracking-wide mt-1">订单 & 存档</div>
                                 <div class="grid grid-cols-2 gap-2">
@@ -2071,7 +2071,7 @@
             const toCode = meta.to || '--';
             const fromTitle = airportTitle(meta.fromName, meta.depTerminal, fromCode === '--' ? '出发机场' : fromCode);
             const toTitle = airportTitle(meta.toName, meta.arrTerminal, toCode === '--' ? '到达机场' : toCode);
-            const startValue = leg.itineraryStart || meta.depScheduled || item.itineraryStart || item.timestamp;
+            const startValue = leg.itineraryStart || meta.depScheduled || item.itineraryStart || '';
             const endValue = leg.itineraryEnd || meta.arrScheduled || item.itineraryEnd || '';
             const fromTz = effectiveFlightTimezone(fromCode, meta.fromTz);
             const toTz = effectiveFlightTimezone(toCode, meta.toTz);
