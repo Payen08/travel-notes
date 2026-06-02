@@ -258,7 +258,7 @@
                             <input type="hidden" name="flight-trip-type" value="oneway">
                         </div>
                         <!-- Outbound -->
-                        <div id="flight-outbound" class="border border-gray-100 rounded-xl p-3 mb-2">
+                        <div id="flight-outbound" class="border border-gray-100 rounded-xl p-3 mb-2 overflow-hidden">
                             <div class="text-[10px] font-extrabold text-primary uppercase tracking-wide mb-2">去程</div>
                             <div class="flex gap-2 mb-2">
                                 <input type="text" id="itinerary-title" placeholder="航班号 (如 NH816)" class="flex-1 bg-gray-50 border-none rounded-xl py-3 px-4 text-sm font-bold focus:outline-none">
@@ -1798,7 +1798,10 @@
 
         // --- RENDER HOME (DASHBOARD & TIMELINE) ---
         function safeDate(value) {
-            const d = new Date(value || Date.now());
+            if (!value) return new Date();
+            // Normalize space-separated dates (AirLabs format) for Safari compatibility
+            const normalized = String(value).trim().replace(' ', 'T');
+            const d = new Date(normalized);
             return Number.isNaN(d.getTime()) ? new Date() : d;
         }
 
@@ -1945,11 +1948,13 @@
         }
 
         function flightDateLabel(value) {
+            if (!value) return '日期未知';
             const date = safeDate(value);
             return date.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
         }
 
         function flightShortDateLabel(value) {
+            if (!value) return '未知';
             const date = safeDate(value);
             return `${date.getMonth() + 1}月${date.getDate()}日`;
         }
@@ -2071,8 +2076,8 @@
             const toCode = meta.to || '--';
             const fromTitle = airportTitle(meta.fromName, meta.depTerminal, fromCode === '--' ? '出发机场' : fromCode);
             const toTitle = airportTitle(meta.toName, meta.arrTerminal, toCode === '--' ? '到达机场' : toCode);
-            const startValue = leg.itineraryStart || meta.depScheduled || item.itineraryStart || '';
-            const endValue = leg.itineraryEnd || meta.arrScheduled || item.itineraryEnd || '';
+            const startValue = leg.itineraryStart || meta.depScheduled || item.itineraryStart || item.timestamp || '';
+            const endValue = leg.itineraryEnd || meta.arrScheduled || item.itineraryEnd || item.timestamp || '';
             const fromTz = effectiveFlightTimezone(fromCode, meta.fromTz);
             const toTz = effectiveFlightTimezone(toCode, meta.toTz);
             return { meta, desc, flightNo, airline, fromCode, toCode, fromTitle, toTitle, startValue, endValue, fromTz, toTz };
@@ -2177,7 +2182,7 @@
             const sharedMeta = meta;
             const returnMeta = returnFlight ? (returnFlight.meta || {}) : {};
             const dateText = returnFlight
-                ? `${flightShortDateLabel(outbound.startValue)} - ${flightShortDateLabel(returnFlight.itineraryStart || returnFlight.timestamp || outbound.startValue)}`
+                ? `${flightShortDateLabel(outbound.startValue)} - ${flightShortDateLabel(flightLegData(item, returnFlight).endValue || flightLegData(item, returnFlight).startValue || outbound.startValue)}`
                 : flightDateLabel(outbound.startValue);
             const cabinLabel = { economy: '经济舱', business: '商务舱', first: '头等舱' };
             const platform = sharedMeta.platform || sharedMeta.bookingPlatform || returnMeta.platform || '';
@@ -2828,8 +2833,8 @@
                             updateReturnVisibility();
                             const returnMeta = returnFlight.meta || {};
                             setVal('itinerary-return-title', returnFlight.desc || '');
-                            setVal('itinerary-return-start', toDateTimeInput(returnFlight.itineraryStart || returnFlight.timestamp));
-                            setVal('itinerary-return-end', toDateTimeInput(returnFlight.itineraryEnd || returnFlight.itineraryStart || returnFlight.timestamp));
+                            setVal('itinerary-return-start', toDateTimeInput(returnFlight.itineraryStart || ''));
+                            setVal('itinerary-return-end', toDateTimeInput(returnFlight.itineraryEnd || returnFlight.itineraryStart || ''));
                             setVal('flight-return-from', returnMeta.from || '');
                             setVal('flight-return-to', returnMeta.to || '');
                             setVal('flight-return-cabin', returnMeta.cabin || meta.cabin || 'economy');
@@ -3044,17 +3049,18 @@
             // Try API for route details (from/to)
             // Prefer AirLabs (more reliable free tier) over Aviationstack
             let apiData = null;
+            const flightDate = record.itineraryStart ? record.itineraryStart.slice(0, 10) : '';
 
             // Try AirLabs
             let airlabsKey = localStorage.getItem('airlabs_api_key');
             if (airlabsKey && airlabsKey !== '__skipped__') {
-                try { apiData = await fetchAirLabsFlight(flightNo, airlabsKey); } catch(e) {}
+                try { apiData = await fetchAirLabsFlight(flightNo, airlabsKey, flightDate); } catch(e) {}
             }
             // Fallback to Aviationstack
             if (!apiData) {
                 let avKey = localStorage.getItem('aviationstack_api_key');
                 if (avKey && avKey !== '__skipped__') {
-                    try { apiData = await fetchAviationstackFlight(flightNo, avKey); } catch(e) {}
+                    try { apiData = await fetchAviationstackFlight(flightNo, avKey, flightDate); } catch(e) {}
                 }
             }
 
@@ -3253,18 +3259,22 @@
                 // 2. Try local airline name
                 const localAirline = getAirlineFromCode(flightNo);
 
+                // Get flight date from the form for better API results
+                const dateInput = document.getElementById(isReturn ? 'itinerary-return-start' : 'itinerary-start');
+                const flightDate = dateInput?.value ? dateInput.value.slice(0, 10) : '';
+
                 // 3. Try flight APIs (keys from cloud settings)
                 let enriched = null;
                 let usedAPI = '';
 
                 let airlabsKey = localStorage.getItem('airlabs_api_key');
                 if (airlabsKey && airlabsKey !== '__skipped__') {
-                    try { enriched = await fetchAirLabsFlight(flightNo, airlabsKey); if (enriched) usedAPI = 'AirLabs'; } catch(e) {}
+                    try { enriched = await fetchAirLabsFlight(flightNo, airlabsKey, flightDate); if (enriched) usedAPI = 'AirLabs'; } catch(e) {}
                 }
                 if (!enriched) {
                     let avKey = localStorage.getItem('aviationstack_api_key');
                     if (avKey && avKey !== '__skipped__') {
-                        try { enriched = await fetchAviationstackFlight(flightNo, avKey); if (enriched) usedAPI = 'Aviationstack'; } catch(e) {}
+                        try { enriched = await fetchAviationstackFlight(flightNo, avKey, flightDate); if (enriched) usedAPI = 'Aviationstack'; } catch(e) {}
                     }
                 }
 
@@ -3336,7 +3346,9 @@
 
         function updateFlightFormAirline(which, airlineName) {
             const titleInput = document.getElementById(which === 'return' ? 'itinerary-return-title' : 'itinerary-title');
-            if (titleInput && airlineName && !titleInput.value.includes(airlineName)) {}
+            if (titleInput && airlineName && !titleInput.value.includes(airlineName)) {
+                titleInput.value = titleInput.value || airlineName;
+            }
         }
 
         // --- Unified flight API helpers ---
@@ -3347,8 +3359,9 @@
             return key.trim();
         }
 
-        async function fetchAirLabsFlight(flightNo, apiKey) {
+        async function fetchAirLabsFlight(flightNo, apiKey, flightDate) {
             const params = new URLSearchParams({ api_key: apiKey, flight_iata: flightNo });
+            if (flightDate) params.set('flight_date', flightDate);
             const resp = await fetchWithTimeout('https://airlabs.co/api/v9/flight?' + params, {}, 6000, 'AirLabs 请求超时');
             if (!resp.ok) throw new Error('AirLabs failed');
             const json = await resp.json();
@@ -3367,8 +3380,9 @@
             };
         }
 
-        async function fetchAviationstackFlight(flightNo, apiKey) {
+        async function fetchAviationstackFlight(flightNo, apiKey, flightDate) {
             const params = new URLSearchParams({ access_key: apiKey, flight_iata: flightNo, limit: '1' });
+            if (flightDate) params.set('flight_date', flightDate);
             const resp = await fetchWithTimeout('https://api.aviationstack.com/v1/flights?' + params, {}, 6000, 'Aviationstack 请求超时');
             if (!resp.ok) throw new Error('Aviationstack failed');
             const json = await resp.json();
