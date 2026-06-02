@@ -1038,6 +1038,22 @@
             return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
         }
 
+        async function fetchWithTimeout(url, options = {}, ms = 6000, label = '网络请求超时') {
+            if (typeof AbortController === 'undefined') {
+                return withTimeout(fetch(url, options), ms, label);
+            }
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), ms);
+            try {
+                return await fetch(url, { ...options, signal: controller.signal });
+            } catch (err) {
+                if (err && err.name === 'AbortError') throw new Error(label);
+                throw err;
+            } finally {
+                clearTimeout(timer);
+            }
+        }
+
         function normalizeSupabaseUrl(value) {
             return String(value || '').trim().replace(/\/+$/, '');
         }
@@ -1657,9 +1673,11 @@
             add('总票价', amountStr);
             const depTime = meta.depScheduled || bill.itineraryStart || '';
             const arrTime = meta.arrScheduled || bill.itineraryEnd || '';
-            if (depTime) add('出发时间', `${flightTimeLabel(depTime)}${meta.fromTz ? ' (UTC' + meta.fromTz + ')' : ''}`);
-            if (arrTime) add('到达时间', `${flightTimeLabel(arrTime)}${meta.toTz ? ' (UTC' + meta.toTz + ')' : ''}`);
-            const dur = flightDurationLabel(depTime, arrTime, meta.duration);
+            const fromTz = effectiveFlightTimezone(meta.from, meta.fromTz);
+            const toTz = effectiveFlightTimezone(meta.to, meta.toTz);
+            if (depTime) add('出发时间', `${flightTimeLabel(depTime)}${fromTz ? ' (UTC' + fromTz + ')' : ''}`);
+            if (arrTime) add('到达时间', `${flightTimeLabel(arrTime)}${toTz ? ' (UTC' + toTz + ')' : ''}`);
+            const dur = flightDurationLabel(depTime, arrTime, meta.duration, fromTz, toTz);
             if (dur && dur !== '--') add('飞行时长', dur);
             if (meta.baggageFree) add('行李额度', escapeHTML(meta.baggageFree));
             if (meta.baggageExcessFee) add('超重费', escapeHTML(meta.baggageExcessFee));
@@ -1681,7 +1699,9 @@
                 const rTo = airportDisplay(normalizeAirportIATA(rm.to) || rm.to || '--');
                 const rDep = rm.depScheduled || returnFlight.itineraryStart || '';
                 const rArr = rm.arrScheduled || returnFlight.itineraryEnd || '';
-                returnHTML = `<div class="mt-4 pt-4 border-t-2 border-dashed border-gray-200"><div class="text-xs font-extrabold text-orange-500 uppercase tracking-wide mb-2">返程</div><div class="text-sm font-bold text-textMain">${escapeHTML(returnFlight.desc || rm.flightNo || '返程航班')}</div><div class="text-xs text-gray-500 mt-1">${rFrom} <i class="fas fa-arrow-right text-gray-300 mx-1"></i> ${rTo}</div><div class="text-xs text-gray-400 mt-0.5">${flightTimeLabel(rDep)} → ${flightTimeLabel(rArr)} · ${flightDurationLabel(rDep, rArr)}</div></div>`;
+                const rFromTz = effectiveFlightTimezone(rm.from, rm.fromTz);
+                const rToTz = effectiveFlightTimezone(rm.to, rm.toTz);
+                returnHTML = `<div class="mt-4 pt-4 border-t-2 border-dashed border-gray-200"><div class="text-xs font-extrabold text-orange-500 uppercase tracking-wide mb-2">返程</div><div class="text-sm font-bold text-textMain">${escapeHTML(returnFlight.desc || rm.flightNo || '返程航班')}</div><div class="text-xs text-gray-500 mt-1">${rFrom} <i class="fas fa-arrow-right text-gray-300 mx-1"></i> ${rTo}</div><div class="text-xs text-gray-400 mt-0.5">${flightTimeLabel(rDep)} → ${flightTimeLabel(rArr)} · ${flightDurationLabel(rDep, rArr, '', rFromTz, rToTz)}</div></div>`;
             }
 
             let mapHTML = '';
@@ -1857,14 +1877,24 @@
                 return `<div class="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">${rows.map(r => `<div class="flex justify-between bg-gray-50 rounded-lg px-2 py-1.5">${r}</div>`).join('')}</div>${mapHTML}`;
             } else if (item.itineraryType === 'hotel') {
                 const rows = [];
-                if (meta.address) rows.push(`<span class="text-gray-400">地址</span> <span class="font-bold">${escapeHTML(meta.address)}</span>`);
-                if (meta.nights > 0) rows.push(`<span class="text-gray-400">晚数</span> <span class="font-bold">${meta.nights}晚</span>`);
-                if (meta.pricePerNight) rows.push(`<span class="text-gray-400">每晚</span> <span class="font-bold">¥${escapeHTML(meta.pricePerNight)}</span>`);
-                if (meta.platform) rows.push(`<span class="text-gray-400">平台</span> <span class="font-bold">${escapeHTML(meta.platform)}</span>`);
-                if (meta.confirmationNo) rows.push(`<span class="text-gray-400">确认号</span> <span class="font-bold">${escapeHTML(meta.confirmationNo)}</span>`);
-                if (meta.breakfast) rows.push(`<span class="text-gray-400">早餐</span> <span class="font-bold text-green-600">含早餐</span>`);
+                const cell = (label, value, { wide = false, accent = false, nowrap = false } = {}) => {
+                    if (value === undefined || value === null || String(value).trim() === '') return '';
+                    return `
+                        <div class="${wide ? 'col-span-2' : ''} min-w-0 bg-gray-50 rounded-xl px-3 py-2">
+                            <div class="text-[10px] font-extrabold text-gray-400 mb-1">${escapeHTML(label)}</div>
+                            <div class="text-[11px] font-bold ${accent ? 'text-primary' : 'text-textMain'} ${nowrap ? 'whitespace-nowrap' : 'break-words'} leading-relaxed">${escapeHTML(value)}</div>
+                        </div>
+                    `;
+                };
+                const baseSymbol = currencySymbol(tripData.baseCurrency || BASE_CURRENCY);
+                if (meta.address) rows.push(cell('地址', meta.address, { wide: true }));
+                if (meta.nights > 0) rows.push(cell('晚数', `${meta.nights}晚`, { nowrap: true }));
+                if (meta.pricePerNight) rows.push(cell('每晚', `${baseSymbol}${formatMoney(meta.pricePerNight, tripData.baseCurrency || BASE_CURRENCY)}`, { accent: true, nowrap: true }));
+                if (meta.platform) rows.push(cell('平台', meta.platform));
+                if (meta.confirmationNo) rows.push(cell('确认号', meta.confirmationNo, { wide: true }));
+                if (meta.breakfast) rows.push(cell('早餐', '含早餐', { accent: true, nowrap: true }));
                 if (!rows.length) return '';
-                return `<div class="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">${rows.map(r => `<div class="flex justify-between bg-gray-50 rounded-lg px-2 py-1.5">${r}</div>`).join('')}</div>`;
+                return `<div class="grid grid-cols-2 gap-2">${rows.join('')}</div>`;
             }
             return '';
         }
@@ -1913,16 +1943,80 @@
             return date.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
         }
 
+        function flightShortDateLabel(value) {
+            const date = safeDate(value);
+            return `${date.getMonth() + 1}月${date.getDate()}日`;
+        }
+
         function flightTimeLabel(value) {
             const date = safeDate(value);
             return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
         }
 
-        function flightDurationLabel(startValue, endValue, fallback = '') {
+        function timezoneOffsetMinutes(value) {
+            const raw = String(value || '').trim().replace(/^UTC/i, '');
+            if (!raw) return null;
+            const sign = raw.startsWith('-') ? -1 : 1;
+            const text = raw.replace(/^[+-]/, '');
+            if (!text) return null;
+            if (text.includes(':')) {
+                const [h, m = '0'] = text.split(':');
+                const hours = Number(h);
+                const minutes = Number(m);
+                if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
+                return sign * (Math.abs(hours) * 60 + Math.abs(minutes));
+            }
+            const decimalHours = Number(text);
+            if (Number.isNaN(decimalHours)) return null;
+            return sign * Math.round(Math.abs(decimalHours) * 60);
+        }
+
+        function hasExplicitTimezone(value) {
+            return /(?:z|[+-]\d{2}:?\d{2})$/i.test(String(value || '').trim());
+        }
+
+        function dateTimeInTimezoneMs(value, tzOffset) {
+            if (!value) return NaN;
+            const text = String(value).trim();
+            if (hasExplicitTimezone(text)) return safeDate(text).getTime();
+            const offset = timezoneOffsetMinutes(tzOffset);
+            if (offset == null) return safeDate(text).getTime();
+            const match = text.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})(?::(\d{2}))?/);
+            if (!match) return safeDate(text).getTime();
+            const [, y, mo, d, h, mi, s = '0'] = match;
+            return Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s)) - offset * 60000;
+        }
+
+        function airportTimezoneOffset(iataCode) {
+            const code = normalizeAirportIATA(iataCode) || String(iataCode || '').trim().toUpperCase();
+            const tzMap = {
+                PEK: '+8', PKX: '+8', PVG: '+8', SHA: '+8', CAN: '+8', CTU: '+8', SZX: '+8', HGH: '+8', WUH: '+8', CKG: '+8', XIY: '+8', KMG: '+8',
+                NRT: '+9', HND: '+9', KIX: '+9', CTS: '+9', FUK: '+9', OKA: '+9', NGO: '+9',
+                BKK: '+7', HKT: '+7', CNX: '+7', DMK: '+7',
+                ICN: '+9', PUS: '+9', CJU: '+9', GMP: '+9',
+                SIN: '+8', KUL: '+8', CGK: '+7', MNL: '+8',
+                TPE: '+8', KHH: '+8', HKG: '+8', MFM: '+8',
+                SGN: '+7', HAN: '+7', PNH: '+7',
+                DEL: '+5.5', BOM: '+5.5', MAA: '+5.5', BLR: '+5.5',
+                LHR: '+0', LGW: '+0', CDG: '+1', FRA: '+1', AMS: '+1', FCO: '+1', MAD: '+1',
+                JFK: '-5', LAX: '-8', SFO: '-8', ORD: '-6', MIA: '-5', BOS: '-5', SEA: '-8',
+                DXB: '+4', AUH: '+4', DOH: '+3', IST: '+3',
+                SYD: '+10', MEL: '+10', BNE: '+10', AKL: '+12'
+            };
+            return tzMap[code] || '';
+        }
+
+        function effectiveFlightTimezone(iataCode, savedTz) {
+            return airportTimezoneOffset(iataCode) || savedTz || '';
+        }
+
+        function flightDurationLabel(startValue, endValue, fallback = '', fromTz = '', toTz = '') {
             if (fallback) return fallback;
-            const start = safeDate(startValue);
-            const end = safeDate(endValue || startValue);
-            const minutes = Math.max(0, Math.round((end - start) / 60000));
+            const startMs = dateTimeInTimezoneMs(startValue, fromTz);
+            const endMs = dateTimeInTimezoneMs(endValue || startValue, toTz || fromTz);
+            if (Number.isNaN(startMs) || Number.isNaN(endMs)) return '--';
+            let minutes = Math.round((endMs - startMs) / 60000);
+            while (minutes < 0) minutes += 1440;
             if (!minutes) return '--';
             const hours = Math.floor(minutes / 60);
             const mins = minutes % 60;
@@ -1952,10 +2046,12 @@
             if (value === undefined || value === null || String(value).trim() === '') return '';
             const text = String(value).trim();
             const valueClass = options.accent ? 'text-textMain font-extrabold' : 'text-textMain';
+            const valueWrapClass = options.nowrap ? 'whitespace-nowrap break-normal' : 'break-words';
+            const spanClass = options.wide ? 'col-span-2' : '';
             return `
-                <div class="min-w-0 bg-gray-50 rounded-xl px-3 py-2">
+                <div class="min-w-0 bg-gray-50 rounded-xl px-3 py-2 ${spanClass}">
                     <div class="text-[10px] font-extrabold text-gray-400 mb-1">${escapeHTML(label)}</div>
-                    <div class="text-sm font-bold ${valueClass} leading-snug break-words">${escapeHTML(text)}</div>
+                    <div class="text-sm font-bold ${valueClass} ${valueWrapClass} leading-snug">${escapeHTML(text)}</div>
                 </div>
             `;
         }
@@ -1971,7 +2067,9 @@
             const toTitle = airportTitle(meta.toName, meta.arrTerminal, toCode === '--' ? '到达机场' : toCode);
             const startValue = leg.itineraryStart || meta.depScheduled || item.itineraryStart || item.timestamp;
             const endValue = leg.itineraryEnd || meta.arrScheduled || item.itineraryEnd || '';
-            return { meta, desc, flightNo, airline, fromCode, toCode, fromTitle, toTitle, startValue, endValue };
+            const fromTz = effectiveFlightTimezone(fromCode, meta.fromTz);
+            const toTz = effectiveFlightTimezone(toCode, meta.toTz);
+            return { meta, desc, flightNo, airline, fromCode, toCode, fromTitle, toTitle, startValue, endValue, fromTz, toTz };
         }
 
         function flightLegHTML(item, label, leg = {}) {
@@ -1980,12 +2078,12 @@
             return `
                 <div class="py-3">
                     <div class="flex items-center justify-between gap-3 mb-3">
-                        <div class="min-w-0 flex items-center gap-2">
-                            <span class="text-[10px] font-extrabold text-primary bg-primary/10 px-2 py-1 rounded-lg">${escapeHTML(label)}</span>
-                            <span class="font-extrabold text-textMain truncate">${escapeHTML(data.flightNo)}</span>
-                            ${data.airline ? `<span class="text-xs font-bold text-gray-400 truncate">${escapeHTML(data.airline)}</span>` : ''}
+                        <div class="min-w-0 flex items-center gap-2 overflow-hidden">
+                            <span class="shrink-0 text-[10px] font-extrabold text-primary bg-primary/10 px-2 py-1 rounded-lg">${escapeHTML(label)}</span>
+                            <span class="shrink-0 max-w-[76px] font-extrabold text-textMain truncate">${escapeHTML(data.flightNo)}</span>
+                            ${data.airline ? `<span class="min-w-0 flex-1 text-xs font-bold text-gray-400 truncate">${escapeHTML(data.airline)}</span>` : ''}
                         </div>
-                        <div class="text-[11px] font-extrabold text-gray-400 shrink-0">${escapeHTML(flightDateLabel(data.startValue))}</div>
+                        <div class="text-[11px] font-extrabold text-gray-400 shrink-0 whitespace-nowrap">${escapeHTML(flightShortDateLabel(data.startValue))}</div>
                     </div>
 
                     <div class="grid grid-cols-[1fr_auto_1fr] gap-3 items-center">
@@ -1998,7 +2096,7 @@
                         </div>
                         <div class="flex flex-col items-center justify-center gap-1">
                             <i class="fas fa-plane text-primary text-2xl"></i>
-                            <div class="text-[11px] font-bold text-gray-400 whitespace-nowrap"><i class="far fa-clock mr-1"></i>${escapeHTML(flightDurationLabel(data.startValue, data.endValue, data.meta.duration))}</div>
+                            <div class="text-[11px] font-bold text-gray-400 whitespace-nowrap"><i class="far fa-clock mr-1"></i>${escapeHTML(flightDurationLabel(data.startValue, data.endValue, data.meta.duration, data.fromTz, data.toTz))}</div>
                         </div>
                         <div class="min-w-0 text-right">
                             <div class="text-base font-extrabold leading-tight text-textMain truncate">${escapeHTML(data.toTitle)}</div>
@@ -2073,7 +2171,7 @@
             const sharedMeta = meta;
             const returnMeta = returnFlight ? (returnFlight.meta || {}) : {};
             const dateText = returnFlight
-                ? `${flightDateLabel(outbound.startValue)} - ${flightDateLabel(returnFlight.itineraryStart || returnFlight.timestamp || outbound.startValue)}`
+                ? `${flightShortDateLabel(outbound.startValue)} - ${flightShortDateLabel(returnFlight.itineraryStart || returnFlight.timestamp || outbound.startValue)}`
                 : flightDateLabel(outbound.startValue);
             const cabinLabel = { economy: '经济舱', business: '商务舱', first: '头等舱' };
             const platform = sharedMeta.platform || sharedMeta.bookingPlatform || returnMeta.platform || '';
@@ -2087,7 +2185,7 @@
             const detailCells = [
                 ticketInfoCell('客舱等级', cabinLabel[sharedMeta.cabin] || sharedMeta.cabin || '经济舱'),
                 ticketInfoCell('座位号', seatNo),
-                ticketInfoCell('总票价', amountText),
+                ticketInfoCell('总票价', amountText, { accent: true, nowrap: true }),
                 ticketInfoCell('购票平台', platform),
                 ticketInfoCell('客票号', ticketNo),
                 ticketInfoCell('机型', aircraft),
@@ -2118,7 +2216,7 @@
 
                     <div class="border-t border-dashed border-gray-100 my-4"></div>
 
-                    <div class="grid grid-cols-3 gap-x-3 gap-y-4">${detailCells}</div>
+                    <div class="grid grid-cols-2 gap-3">${detailCells}</div>
 
                     ${(() => {
                         const mapFrom = normalizeAirportIATA(sharedMeta.from) || sharedMeta.from || '';
@@ -2141,7 +2239,7 @@
             if (meta.breakfast) bits.push('含早餐');
             if (meta.confirmationNo) bits.push(`确认号: ${escapeHTML(meta.confirmationNo)}`);
             if (!bits.length) return '';
-            return `<div class="text-[10px] font-bold text-gray-400 mt-2">${bits.join(' · ')}</div>`;
+            return `<div class="text-[10px] font-bold text-gray-400 mt-2 leading-relaxed break-words">${bits.join(' · ')}</div>`;
         }
 
         function expenseMetaLine(item) {
@@ -2240,15 +2338,15 @@
                         <div class="relative z-10 w-8 h-8 rounded-full ${catInfo.color} flex items-center justify-center border-4 border-background shrink-0 mt-2">
                             <i class="fas ${catInfo.icon} text-xs"></i>
                         </div>
-                        <div class="flex-1 bg-white rounded-2xl p-4 shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-shadow" onclick="toggleTimelineDetail(this)">
+                        <div class="min-w-0 flex-1 bg-white rounded-2xl p-4 shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-shadow" onclick="toggleTimelineDetail(this)">
                             <div class="flex justify-between items-start gap-3 mb-3">
-                                <div>
+                                <div class="min-w-0 flex items-center gap-2 overflow-hidden">
                                     <span class="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded uppercase">${item.itineraryType === 'flight'?'航班':'酒店'}</span>
-                                    <span class="text-xs font-bold text-gray-400 ml-2">${timeStr}</span>
+                                    <span class="text-xs font-bold text-gray-400 truncate">${timeStr}</span>
                                 </div>
                                 <span class="font-bold text-textMain shrink-0 whitespace-nowrap">${amountText}</span>
                             </div>
-                            <h3 class="font-extrabold text-lg leading-snug text-textMain mb-3">${escapeHTML(item.desc || catInfo.label)}</h3>
+                            <h3 class="font-extrabold text-lg leading-snug text-textMain mb-3 break-words">${escapeHTML(item.desc || catInfo.label)}</h3>
                             <div class="text-xs font-bold text-gray-500 bg-gray-50 p-2 rounded-lg"><i class="far fa-clock mr-1"></i> ${startText} - ${endText}</div>
                             ${item.itineraryType === 'flight' ? flightMetaLine(item) : hotelMetaLine(item)}
                             ${item.itineraryType !== 'hotel' && item.location ? `<div class="text-[10px] text-gray-400 mt-2"><i class="fas fa-map-marker-alt"></i> ${escapeHTML(item.location)}</div>` : ''}
@@ -2300,7 +2398,7 @@
                 }
 
                 const node = document.createElement('div');
-                node.className = 'flex gap-3 mb-5';
+                node.className = 'flex gap-2 mb-1 min-w-0 p-2';
                 node.innerHTML = innerHtml;
                 container.appendChild(node);
             });
@@ -2433,6 +2531,7 @@
             } else {
                 if (toggle) toggle.classList.add('hidden');
                 if (returnSection) returnSection.classList.add('hidden');
+                updateHotelNights();
             }
         }
 
@@ -2468,21 +2567,35 @@
         };
 
         // Hotel: auto-calculate nights and total price
+        function hotelNightCount(checkin, checkout) {
+            if (!checkin || !checkout) return 0;
+            const d1 = new Date(checkin);
+            const d2 = new Date(checkout);
+            if (Number.isNaN(d1.getTime()) || Number.isNaN(d2.getTime())) return 0;
+            return Math.max(0, Math.round((d2 - d1) / (1000 * 60 * 60 * 24)));
+        }
+
         function updateHotelNights() {
             const checkin = document.getElementById('hotel-checkin')?.value;
             const checkout = document.getElementById('hotel-checkout')?.value;
             const nightsEl = document.getElementById('hotel-nights');
-            const priceNight = parseFloat(document.getElementById('hotel-price-night')?.value) || 0;
+            const priceNightEl = document.getElementById('hotel-price-night');
             const totalEl = document.getElementById('hotel-price-total');
+            const amount = parseFloat(document.getElementById('input-amount')?.value) || 0;
+            const nights = hotelNightCount(checkin, checkout);
 
-            if (checkin && checkout) {
-                const d1 = new Date(checkin);
-                const d2 = new Date(checkout);
-                const nights = Math.max(0, Math.round((d2 - d1) / (1000 * 60 * 60 * 24)));
-                if (nightsEl) nightsEl.textContent = nights + '晚';
-                if (totalEl && nights > 0) totalEl.value = (priceNight * nights).toFixed(2);
+            if (nightsEl) nightsEl.textContent = nights + '晚';
+
+            if (amount > 0) {
+                if (totalEl) totalEl.value = amount.toFixed(2);
+                if (priceNightEl) priceNightEl.value = nights > 0 ? (amount / nights).toFixed(2) : '';
+                return;
+            }
+
+            const priceNight = parseFloat(priceNightEl?.value) || 0;
+            if (nights > 0 && priceNight > 0) {
+                if (totalEl) totalEl.value = (priceNight * nights).toFixed(2);
             } else {
-                if (nightsEl) nightsEl.textContent = '0晚';
                 if (totalEl) totalEl.value = '';
             }
         }
@@ -2491,9 +2604,11 @@
             const hotelCheckin = document.getElementById('hotel-checkin');
             const hotelCheckout = document.getElementById('hotel-checkout');
             const hotelPrice = document.getElementById('hotel-price-night');
+            const amountInput = document.getElementById('input-amount');
             if (hotelCheckin) hotelCheckin.addEventListener('change', updateHotelNights);
             if (hotelCheckout) hotelCheckout.addEventListener('change', updateHotelNights);
             if (hotelPrice) hotelPrice.addEventListener('input', updateHotelNights);
+            if (amountInput) amountInput.addEventListener('input', updateHotelNights);
             // Hotel address → map link
             const hotelAddr = document.getElementById('hotel-address');
             const hotelMap = document.getElementById('hotel-map-link');
@@ -2861,7 +2976,7 @@
             if (cached > 0) return cached;
 
             try {
-                const response = await fetch(`https://api.frankfurter.dev/v2/latest?base=${encodeURIComponent(curr)}&symbols=${encodeURIComponent(base)}`);
+                const response = await fetchWithTimeout(`https://api.frankfurter.dev/v2/latest?base=${encodeURIComponent(curr)}&symbols=${encodeURIComponent(base)}`, {}, 4500, '汇率请求超时');
                 if (!response.ok) throw new Error('rate request failed');
                 const payload = await response.json();
                 const rate = Number(payload.rates && payload.rates[base]);
@@ -2887,7 +3002,7 @@
             }
         }
 
-        async function enrichFlightRecord(record) {
+        function enrichFlightRecordLocal(record) {
             if (record.type !== 'itinerary' || record.itineraryType !== 'flight') return record;
 
             const flightNo = extractFlightNo(record.desc);
@@ -2907,6 +3022,18 @@
                     record.desc = `${flightNo} ${localAirline}`;
                 }
             }
+            if (!record.meta._enriched) record.meta._enriched = enriched;
+            return record;
+        }
+
+        async function enrichFlightRecord(record) {
+            record = enrichFlightRecordLocal(record);
+            if (record.type !== 'itinerary' || record.itineraryType !== 'flight') return record;
+
+            const flightNo = extractFlightNo(record.desc);
+            if (!flightNo) return record;
+            const localAirline = getAirlineFromCode(flightNo);
+            let enriched = record.meta?._enriched || 'none';
 
             // Try API for route details (from/to)
             // Prefer AirLabs (more reliable free tier) over Aviationstack
@@ -2954,6 +3081,86 @@
                 record.meta._enriched = enriched;
             }
             return record;
+        }
+
+        function cloneBillRecord(record) {
+            return JSON.parse(JSON.stringify(record));
+        }
+
+        async function syncBillByIdInBackground(recordId, staleLegacyReturnId = '') {
+            if (!cloudReady()) return true;
+            const current = bills.find(b => String(b.id) === String(recordId));
+            if (!current) return false;
+            try {
+                const synced = await withTimeout(upsertCloudBill(current, { silent: true }), 6000, '云端同步超时');
+                if (staleLegacyReturnId) {
+                    await withTimeout(deleteCloudBill(staleLegacyReturnId, { silent: true }), 6000, '云端删除旧返程超时');
+                }
+                if (synced) setCloudMessage('本地已保存，云端已同步。', 'success');
+                return !!synced;
+            } catch (err) {
+                rememberCloudError(err, '云端同步失败');
+                setCloudMessage('本地已保存，但云端同步还没完成。网络恢复后可点创建/上传。', 'error');
+                return false;
+            }
+        }
+
+        async function enrichFlightByIdInBackground(recordId) {
+            const idx = bills.findIndex(b => String(b.id) === String(recordId));
+            if (idx < 0) return false;
+            const originalSnapshot = JSON.stringify(bills[idx]);
+            let workRecord = cloneBillRecord(bills[idx]);
+            if (workRecord.type !== 'itinerary' || workRecord.itineraryType !== 'flight') return false;
+
+            try {
+                workRecord = await withTimeout(enrichFlightRecord(workRecord), 8000, '航班补全超时');
+                const returnFlight = normalizeReturnFlightPayload(workRecord.meta && workRecord.meta.returnFlight);
+                if (returnFlight) {
+                    let returnWork = {
+                        id: `${workRecord.id}-return`,
+                        type: 'itinerary',
+                        itineraryType: 'flight',
+                        category: 'flight',
+                        desc: returnFlight.desc || '返程航班',
+                        itineraryStart: returnFlight.itineraryStart,
+                        itineraryEnd: returnFlight.itineraryEnd || returnFlight.itineraryStart,
+                        timestamp: safeDate(returnFlight.itineraryStart || workRecord.timestamp).toISOString(),
+                        meta: { ...(returnFlight.meta || {}) }
+                    };
+                    returnWork = await withTimeout(enrichFlightRecord(returnWork), 8000, '返程航班补全超时');
+                    workRecord.meta.returnFlight = {
+                        desc: returnWork.desc,
+                        itineraryStart: returnWork.itineraryStart,
+                        itineraryEnd: returnWork.itineraryEnd,
+                        meta: returnWork.meta || {}
+                    };
+                }
+            } catch (err) {
+                rememberCloudError(err, '航班补全失败');
+                return false;
+            }
+
+            const currentIdx = bills.findIndex(b => String(b.id) === String(recordId));
+            if (currentIdx < 0 || JSON.stringify(bills[currentIdx]) !== originalSnapshot) return false;
+            const nextSnapshot = JSON.stringify(workRecord);
+            if (nextSnapshot === originalSnapshot) return false;
+
+            bills[currentIdx] = workRecord;
+            saveData();
+            renderHome();
+            renderSettlement();
+            return true;
+        }
+
+        function queuePostSaveTasks(recordId, { staleLegacyReturnId = '', enrichFlight = false } = {}) {
+            if (cloudReady()) setCloudMessage('本地已保存，正在后台同步云端...', 'muted');
+            setTimeout(async () => {
+                await syncBillByIdInBackground(recordId, staleLegacyReturnId);
+                if (enrichFlight) {
+                    const changed = await enrichFlightByIdInBackground(recordId);
+                    if (changed) await syncBillByIdInBackground(recordId);
+                }
+            }, 0);
         }
 
         // --- FLIGHT LOOKUP CACHE (localStorage + Supabase shared) ---
@@ -3136,7 +3343,7 @@
 
         async function fetchAirLabsFlight(flightNo, apiKey) {
             const params = new URLSearchParams({ api_key: apiKey, flight_iata: flightNo });
-            const resp = await fetch('https://airlabs.co/api/v9/flight?' + params);
+            const resp = await fetchWithTimeout('https://airlabs.co/api/v9/flight?' + params, {}, 6000, 'AirLabs 请求超时');
             if (!resp.ok) throw new Error('AirLabs failed');
             const json = await resp.json();
             if (!json.response) throw new Error('AirLabs no data');
@@ -3156,7 +3363,7 @@
 
         async function fetchAviationstackFlight(flightNo, apiKey) {
             const params = new URLSearchParams({ access_key: apiKey, flight_iata: flightNo, limit: '1' });
-            const resp = await fetch('https://api.aviationstack.com/v1/flights?' + params);
+            const resp = await fetchWithTimeout('https://api.aviationstack.com/v1/flights?' + params, {}, 6000, 'Aviationstack 请求超时');
             if (!resp.ok) throw new Error('Aviationstack failed');
             const json = await resp.json();
             if (json.error || !json.data || !json.data[0]) throw new Error('Aviationstack no data');
@@ -3335,14 +3542,9 @@
                         record.timestamp = safeDate(record.itineraryStart + 'T12:00:00').toISOString();
                         record.location = document.getElementById('hotel-address')?.value?.trim() || '';
 
-                        // Auto-calculate amount from price/night × nights
-                        const priceNight = parseFloat(document.getElementById('hotel-price-night')?.value) || 0;
-                        const totalPrice = parseFloat(document.getElementById('hotel-price-total')?.value) || 0;
-                        if (priceNight > 0 && totalPrice > 0 && amount === 0) {
-                            // Use hotel total as the record amount if user didn't manually set amount
-                            record.amount = totalPrice;
-                            record.baseAmount = totalPrice * fxRate;
-                        }
+                        const nights = hotelNightCount(record.itineraryStart, record.itineraryEnd);
+                        const totalPrice = amount;
+                        const priceNight = nights > 0 ? totalPrice / nights : (parseFloat(document.getElementById('hotel-price-night')?.value) || 0);
 
                         // Save hotel-specific meta
                         record.meta = {
@@ -3351,15 +3553,12 @@
                             address: record.location,
                             checkin: record.itineraryStart,
                             checkout: record.itineraryEnd,
-                            pricePerNight: priceNight || '',
+                            pricePerNight: priceNight ? Number(priceNight.toFixed(2)) : '',
+                            totalPrice: Number(totalPrice || 0),
                             platform: document.getElementById('hotel-platform')?.value || '',
                             confirmationNo: document.getElementById('hotel-confirm-no')?.value?.trim() || '',
                             breakfast: document.getElementById('hotel-breakfast')?.checked || false,
-                            nights: (() => {
-                                const ci = record.itineraryStart, co = record.itineraryEnd;
-                                if (ci && co) return Math.max(0, Math.round((new Date(co) - new Date(ci)) / 86400000));
-                                return 0;
-                            })()
+                            nights
                         };
                     }
                     
@@ -3372,7 +3571,7 @@
                     }
 
                     if (itType === 'flight') {
-                        record = await enrichFlightRecord(record);
+                        record = enrichFlightRecordLocal(record);
 
                         const isRoundtrip = document.querySelector('input[name="flight-trip-type"]').value === 'roundtrip';
                         if (isRoundtrip) {
@@ -3414,7 +3613,7 @@
                                 payer: record.payer,
                                 participants: [...record.participants]
                             };
-                            returnFlightRecord = await enrichFlightRecord(returnFlightRecord);
+                            returnFlightRecord = enrichFlightRecordLocal(returnFlightRecord);
                             record.meta.returnFlight = {
                                 desc: returnFlightRecord.desc,
                                 itineraryStart: returnFlightRecord.itineraryStart,
@@ -3448,18 +3647,6 @@
                 }
 
                 saveData();
-                let cloudSynced = true;
-                if (cloudReady()) {
-                    try {
-                        cloudSynced = await upsertCloudBill(record, { silent: true });
-                        if (staleLegacyReturnRecord) {
-                            await deleteCloudBill(staleLegacyReturnRecord.id, { silent: true });
-                        }
-                    } catch (syncErr) {
-                        rememberCloudError(syncErr, '云端同步超时');
-                        cloudSynced = false;
-                    }
-                }
                 document.getElementById('location-text').textContent = '获取定位';
                 document.getElementById('btn-location').classList.remove('text-primary', 'bg-primary/10');
                 editingBillId = null;
@@ -3475,10 +3662,10 @@
                 }
                 
                 showView('home');
-                if (!cloudSynced) {
-                    setCloudMessage('本地已保存，但云端同步失败。请检查 Supabase 权限后点创建/上传。', 'error');
-                    showAlert('本地已保存', lastCloudError || '云端同步失败，朋友暂时看不到这条记录。', 'error');
-                }
+                queuePostSaveTasks(record.id, {
+                    staleLegacyReturnId: staleLegacyReturnRecord ? staleLegacyReturnRecord.id : '',
+                    enrichFlight: record.type === 'itinerary' && record.itineraryType === 'flight'
+                });
             } catch (err) {
                 console.error('Save failed:', err);
                 showAlert('保存失败', err.message || '保存时出错，请重试。', 'error');
