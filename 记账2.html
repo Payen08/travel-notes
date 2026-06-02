@@ -1990,7 +1990,7 @@
 
                     <div class="grid grid-cols-[1fr_auto_1fr] gap-3 items-center">
                         <div class="min-w-0">
-                            <div class="text-lg font-extrabold leading-tight text-textMain break-words">${escapeHTML(data.fromTitle)}</div>
+                            <div class="text-base font-extrabold leading-tight text-textMain truncate">${escapeHTML(data.fromTitle)}</div>
                             <div class="text-xs font-bold text-gray-500 mt-2">
                                 <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary text-white mr-1"><i class="fas fa-arrow-up text-[10px]"></i></span>
                                 ${escapeHTML(data.fromCode)} <span class="text-textMain">${escapeHTML(flightTimeLabel(data.startValue))}</span>
@@ -2001,7 +2001,7 @@
                             <div class="text-[11px] font-bold text-gray-400 whitespace-nowrap"><i class="far fa-clock mr-1"></i>${escapeHTML(flightDurationLabel(data.startValue, data.endValue, data.meta.duration))}</div>
                         </div>
                         <div class="min-w-0 text-right">
-                            <div class="text-lg font-extrabold leading-tight text-textMain break-words">${escapeHTML(data.toTitle)}</div>
+                            <div class="text-base font-extrabold leading-tight text-textMain truncate">${escapeHTML(data.toTitle)}</div>
                             <div class="text-xs font-bold text-gray-500 mt-2">
                                 <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary text-white mr-1"><i class="fas fa-arrow-down text-[10px]"></i></span>
                                 ${escapeHTML(data.toCode)} <span class="text-textMain">${escapeHTML(arrivalTime)}</span>
