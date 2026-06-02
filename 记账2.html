@@ -1240,10 +1240,13 @@
         async function autoDiscoverCloudTrip() {
             if (!cloudClient || !cloudSession) return;
             try {
-                // Check if user is a member of any trip
                 const { data: memberships, error } = await cloudClient.from('trip_members')
                     .select('trip_id').eq('user_id', cloudSession.user.id).limit(1);
-                if (error || !memberships || memberships.length === 0) return;
+                if (error) { console.warn('autoDiscover error:', error.message); return; }
+                if (!memberships || memberships.length === 0) {
+                    setCloudMessage('未找到云端旅程，请创建或输入邀请码加入。', 'muted');
+                    return;
+                }
                 cloudTripId = memberships[0].trip_id;
                 localStorage.setItem('travel2CloudTripId', cloudTripId);
                 await loadCloudInvite();
@@ -1251,7 +1254,10 @@
                 await pullCloudTrip({ silent: true });
                 renderCloudState();
                 setCloudMessage('已自动连接云端旅程，数据已同步。', 'success');
-            } catch(e) { /* silent */ }
+            } catch(e) {
+                console.warn('autoDiscover failed:', e);
+                setCloudMessage('自动连接失败，请手动点拉取云端。', 'error');
+            }
         }
 
         function tripPayload() {
