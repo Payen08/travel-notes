@@ -355,7 +355,7 @@
                             <input type="text" id="hotel-name" placeholder="酒店名称" class="w-full bg-gray-50 border-none rounded-xl py-3 px-4 text-sm font-bold mb-2 focus:outline-none">
                             <div class="flex gap-1 mb-2">
                                 <input type="text" id="hotel-address" placeholder="地址" class="flex-1 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold focus:outline-none">
-                                <a id="hotel-map-link" href="#" target="_blank" class="shrink-0 bg-gray-100 text-gray-500 py-2 px-3 rounded-xl text-xs font-bold flex items-center gap-1" title="在地图查看"><i class="fas fa-map-marker-alt"></i></a>
+                                <button type="button" id="hotel-map-link" class="shrink-0 bg-gray-100 text-gray-500 py-2 px-3 rounded-xl text-xs font-bold flex items-center gap-1" title="在地图查看"><i class="fas fa-map-marker-alt"></i></button>
                             </div>
                             <div class="flex gap-1 mb-2">
                                 <input type="date" id="hotel-checkin" class="min-w-0 flex-1 bg-gray-50 border-none rounded-xl py-2 px-1.5 text-[11px] font-bold focus:outline-none text-gray-500">
@@ -2108,7 +2108,7 @@
                             <span class="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded whitespace-nowrap uppercase">${returnFlight ? '往返' : '航班'}</span>
                             <span class="text-xs font-bold text-gray-400 truncate">${escapeHTML(dateText)}</span>
                         </div>
-                        <span class="font-bold text-textMain shrink-0">${amountText}</span>
+                        <span class="font-bold text-textMain shrink-0 whitespace-nowrap">${amountText}</span>
                     </div>
 
                     <div class="divide-y divide-gray-100">
@@ -2246,7 +2246,7 @@
                                     <span class="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded uppercase">${item.itineraryType === 'flight'?'航班':'酒店'}</span>
                                     <span class="text-xs font-bold text-gray-400 ml-2">${timeStr}</span>
                                 </div>
-                                <span class="font-bold text-textMain shrink-0">${amountText}</span>
+                                <span class="font-bold text-textMain shrink-0 whitespace-nowrap">${amountText}</span>
                             </div>
                             <h3 class="font-extrabold text-lg leading-snug text-textMain mb-3">${escapeHTML(item.desc || catInfo.label)}</h3>
                             <div class="text-xs font-bold text-gray-500 bg-gray-50 p-2 rounded-lg"><i class="far fa-clock mr-1"></i> ${startText} - ${endText}</div>
@@ -2499,8 +2499,11 @@
             const hotelMap = document.getElementById('hotel-map-link');
             if (hotelAddr && hotelMap) {
                 hotelAddr.addEventListener('input', function() {
-                    const addr = encodeURIComponent(this.value.trim());
-                    hotelMap.href = addr ? `https://maps.google.com/?q=${addr}` : '#';
+                    hotelMap.dataset.addr = this.value.trim();
+                });
+                hotelMap.addEventListener('click', function() {
+                    const addr = this.dataset.addr || '';
+                    if (addr) window.open('https://maps.google.com/?q=' + encodeURIComponent(addr), '_blank');
                 });
             }
         });
