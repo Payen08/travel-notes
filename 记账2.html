@@ -3448,10 +3448,9 @@
                 let cloudSynced = true;
                 if (cloudReady()) {
                     try {
-                        cloudSynced = await withTimeout(upsertCloudBill(record, { silent: true }), 12000, '云端同步超时');
+                        cloudSynced = await upsertCloudBill(record, { silent: true });
                         if (staleLegacyReturnRecord) {
-                            const returnDeleted = await withTimeout(deleteCloudBill(staleLegacyReturnRecord.id, { silent: true }), 12000, '云端同步超时');
-                            cloudSynced = cloudSynced && returnDeleted;
+                            await deleteCloudBill(staleLegacyReturnRecord.id, { silent: true });
                         }
                     } catch (syncErr) {
                         rememberCloudError(syncErr, '云端同步超时');
@@ -3688,7 +3687,7 @@
                 let cloudSynced = true;
                 if (cloudReady()) {
                     try {
-                        cloudSynced = await withTimeout(createOrUpdateCloudTrip({ silent: true }), 12000, '云端同步超时');
+                        cloudSynced = await createOrUpdateCloudTrip({ silent: true });
                     } catch (syncErr) {
                         rememberCloudError(syncErr, '云端同步超时');
                         cloudSynced = false;
