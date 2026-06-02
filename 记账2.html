@@ -3280,6 +3280,10 @@
                 // so cache/API results must not be treated as date-agnostic.
                 const dateInput = document.getElementById(isReturn ? 'itinerary-return-start' : 'itinerary-start');
                 const flightDate = dateInput?.value ? dateInput.value.slice(0, 10) : '';
+                if (!flightDate) {
+                    if (btn) { btn.disabled = false; btn.innerHTML = origHTML; }
+                    return showAlert('先选择日期', `请先选择${isReturn ? '返程' : '去程'}出发日期，再查询航班。`, 'error');
+                }
 
                 // 1. Check cache (localStorage → Supabase shared)
                 const cached = await getCachedFlight(flightNo, flightDate);
