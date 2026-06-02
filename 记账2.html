@@ -129,8 +129,8 @@
                         <div class="font-bold text-sm text-textMain" id="home-budget-text">¥10,000</div>
                     </div>
                     <div class="bg-white/65 rounded-2xl p-3 flex-1 backdrop-blur-sm">
-                        <div class="flex items-center gap-1.5 mb-1"><div class="w-2 h-2 rounded-full bg-primary"></div><span class="text-[10px] font-bold text-gray-500 uppercase">当前汇率</span></div>
-                        <div class="font-bold text-sm text-textMain" id="home-rate-text">100円=4.8元</div>
+                        <div class="flex items-center gap-1.5 mb-1"><div class="w-2 h-2 rounded-full bg-primary"></div><span class="text-[10px] font-bold text-gray-500 uppercase">剩余泰铢余额</span></div>
+                        <div class="font-bold text-sm text-textMain" id="home-rate-text">฿0.00 THB</div>
                     </div>
                 </div>
             </div>
@@ -2302,11 +2302,17 @@
             document.getElementById('budget-percent-text').textContent = `${pct.toFixed(1)}%`;
             document.getElementById('budget-progress').style.width = `${pct}%`;
             
+            const remainBase = Math.max(budget - totalSpentBase, 0);
             document.getElementById('arc-spent').textContent = formatMoney(totalSpentBase);
-            document.getElementById('arc-remain').textContent = formatMoney(Math.max(budget - totalSpentBase, 0));
+            document.getElementById('arc-remain').textContent = formatMoney(remainBase);
 
-            // Dynamic Rate Display
-            document.getElementById('home-rate-text').textContent = `1 ${tripData.foreignCurrency} = ${compactRate(tripData.rate)} ${base}`;
+            // Remaining foreign-currency balance based on the base-currency budget.
+            const rate = Number(tripData.rate || 0);
+            const foreign = tripData.foreignCurrency || 'THB';
+            const remainingForeign = rate > 0 ? remainBase / rate : 0;
+            document.getElementById('home-rate-text').textContent = rate > 0
+                ? `${currencySymbol(foreign)}${formatMoney(remainingForeign, foreign)} ${foreign}`
+                : '--';
 
             // Render Timeline
             timelineEvents.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); // Newest first
