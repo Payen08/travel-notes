@@ -1,11 +1,11 @@
-const CACHE_NAME = 'travel-accounting-pwa-v9';
+const CACHE_NAME = 'travel-accounting-pwa-v10';
 const APP_SHELL = [
   './',
   './index.html',
   './记账2.html',
   './auth-callback.html',
   './manifest.webmanifest',
-  './icons/icon.svg'
+  './icons/icon.png'
 ];
 
 function scopedUrl(path) {
